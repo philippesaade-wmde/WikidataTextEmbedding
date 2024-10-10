@@ -3,6 +3,7 @@ import astrapy
 import numpy as np
 import os
 import pandas as pd
+import re
 import sys
 import uuid
 
@@ -11,6 +12,16 @@ from tqdm import tqdm
 
 def is_docker():
     """Check if the script is running inside a Docker container."""
+    with open('/proc/1/cgroup', 'rt') as fproc:
+        return (
+            os.path.exists('/.dockerenv')
+            or any('docker' in line for line in fproc)
+        )
+
+
+"""
+def is_docker():
+    '''Check if the script is running inside a Docker container.'''
     # Check for .dockerenv file
     if os.path.exists('/.dockerenv'):
         return True
@@ -25,8 +36,16 @@ def is_docker():
         pass
 
     return False
+"""
 
 
+def vector_str_manipulation(vector_str):
+    """Convert vector string to a list of floats."""
+    return re.sub(r'\s+', ',', vector_str).replace('[,', '[').replace(',]', ']')
+    # return vector_str.replace('[,', '[').replace(',]', ']')
+
+
+"""
 def vector_str_manipulation(vector_str):
     # Function to convert vector string to list of floats
     while '  ' in vector_str:
@@ -38,8 +57,21 @@ def vector_str_manipulation(vector_str):
         vector_str = vector_str.replace(',,', ',')
 
     return vector_str.replace('[,', '[').replace(',]', ']')
+"""
 
 
+def convert_vector(vector_str):
+    """Convert string representation of a vector to a list of floats."""
+    vector_str = vector_str_manipulation(vector_str)
+    if isinstance(vector_str, str):
+        return [float(x) for x in ast.literal_eval(vector_str)]
+    elif isinstance(vector_str, (float, np.ndarray)):
+        return list(vector_str)
+    else:
+        raise TypeError(f'Unsupported type: {type(vector_str)}')
+
+
+"""
 def convert_vector(vector_str):
     # print(f'{vector_str=}')
     vector_str = vector_str_manipulation(vector_str)
@@ -53,14 +85,14 @@ def convert_vector(vector_str):
     else:
         print(f'{type(vector_str)=}')
         return vector_str
-
+"""
 
 # Function to generate documents from CSV rows
 
 
-def generate_statement_document(row):
+def generate_statement_document(row, embedding):
     return {
-        "_id": row["uuid"] if "uuid" in row else str(uuid.uuid4()),
+        "_id": "_id": row.get("uuid", str(uuid.uuid4())),
         "qid": row["qid"],
         "pid": row["pid"],
         "value": row["value"],
@@ -69,13 +101,13 @@ def generate_statement_document(row):
         "value_content": row["value_content"],
         "statement": row["statement"],
         # Convert string to vector
-        "embedding": convert_vector(embedding)
+        "embedding": convert_vector(row["embedding"])
     }
 
 
-def generate_item_document(row):
+def generate_item_document(row, embedding):
     return {
-        "_id": row["uuid"] if "uuid" in row else str(uuid.uuid4()),
+        "_id": "_id": row.get("uuid", str(uuid.uuid4())),
         "qid": row["qid"],
         "chunk_id": row["chunk_id"],
         "qid_chunk": row["qid_chunk"],
@@ -90,29 +122,29 @@ def generate_item_document(row):
 
 
 def generate_document(row, pipeline='item'):
+    """Generate a document based on the pipeline type."""
     if pipeline == 'item':
         return generate_item_document(row)
-    if pipeline == 'statement':
+    elif pipeline == 'statement':
         return generate_statement_document(row)
+    else:
+        raise ValueError(f'Unknown pipeline type: {pipeline}')
 
 # Batch insert documents into the collection
 
 
 def batch_insert_documents(collection, documents, label=''):
+    """Batch insert documents into the collection."""
     embeddings_ = [doc["embedding"] for doc in documents]
-
-    documents_ = []
-    for doc in documents:
-        doc_ = {key: val for key, val in doc.items() if key != 'embedding'}
-        documents_.append(doc_)
+    documents_ = [
+        {key: val for key, val in doc.items() if key != 'embedding'}
+        for doc in documents
+    ]
 
     try:
         collection.insert_many(documents_, vectors=embeddings_)
     except Exception as err:
         # TODO: introduce recursive looking
-        # batch_insert_documents(collection, documents_, label=label)
-        print(f'Error on Chunk {label}')
-        print(f'Error: {err}')
         uuid_err_counter = 0
 
         for embedding_, doc_ in tqdm(zip(embeddings_, documents_)):
