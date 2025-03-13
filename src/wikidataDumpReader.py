@@ -3,10 +3,12 @@ import bz2
 import orjson
 import time
 from tqdm import tqdm
-from multiprocessing import Process, Queue, Value
+from multiprocessing import Process, Queue, Value, cpu_count
 
 class WikidataDumpReader:
-    def __init__(self, file_path, num_processes=4, queue_size=1000, skiplines=0):
+    def __init__(
+            self, file_path, num_processes=cpu_count()-1,
+            queue_size=1000, skiplines=0):
         """
         Initializes the reader with the file path, number of processes, queue size, and number of lines to skip.
 
@@ -77,12 +79,14 @@ class WikidataDumpReader:
         producer_p.start()
         for cp in consumer_ps:
             cp.start()
+
         if reporter_p:
             reporter_p.start()
 
         producer_p.join()
         for cp in consumer_ps:
             cp.join()
+
         if reporter_p:
             reporter_p.join()
 
@@ -96,20 +100,35 @@ class WikidataDumpReader:
 
         start_time = time.time()
 
-        while True:
-            time.sleep(print_per_s)
+        with tqdm(desc="Processing items") as pbar:
+            while True:
+                time.sleep(print_per_s)
 
-            with self.iterations.get_lock():
-                items_processed = self.iterations.value
+                with self.iterations.get_lock():
+                    items_processed = self.iterations.value
 
-            # If finished and queue empty, exit
-            if self.finished.value == 1 and self.queue.empty():
-                break
+                # If finished and queue empty, exit
+                if self.finished.value == 1 and self.queue.empty():
+                    break
 
-            elapsed = time.time() - start_time
-            rate = items_processed / elapsed if elapsed > 0 else 0.0
+                elapsed = time.time() - start_time
+                rate = items_processed / elapsed if elapsed > 0 else 0.0
 
-            print(f"Items Processed: {items_processed} | Processing Rate: {rate:.0f} items/sec")
+                # print(
+                #     f"Items Processed: {items_processed} "
+                #     f"| Processing Rate: {rate:.0f} items/sec"
+                # )
+
+                # Update progress bar
+                pbar.set_postfix_str(
+                    f"Items Processed: {items_processed} "
+                    f"| Processing Rate: {rate:.0f} items/sec"
+                    # f"Rate: {rate:.0f} items/sec"
+                )
+                pbar.update(items_processed - pbar.n)
+
+            # Final update to ensure progress bar is complete
+            pbar.update(items_processed - pbar.n)
 
     def _producer(self, max_iterations):
         """
@@ -129,9 +148,13 @@ class WikidataDumpReader:
         else:
             raise ValueError(f"File extension '{self.extension}' is not supported")
 
+        # total=total_lines, 
+        # with tqdm(desc="Reading lines") as pbar:
         for line in lines_gen:
             self.queue.put(line)
             iters += 1
+            # pbar.update(1)  # Update progress bar
+
             if max_iterations and iters >= max_iterations:
                 break
 
@@ -166,7 +189,8 @@ class WikidataDumpReader:
 
     def _read_jsonfile(self):
         """
-        Yields lines from a .json file, skipping self.skiplines lines at the start.
+        Yields lines from a .json file, skipping self.skiplines lines 
+            at the start.
 
         Returns:
         - Iterator[str]: An iterator over lines from the JSON file.

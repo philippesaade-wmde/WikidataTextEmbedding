@@ -1,31 +1,48 @@
-from typing import List
 import json
 import requests
 import numpy as np
 import base64
+
+import torch  # torch no long imported
+
+
+from typing import List
 from wikidataCache import create_cache_embedding_model
 
+
 class JinaAIEmbedder:
-    def __init__(self, passage_task="retrieval.passage", query_task="retrieval.query", embedding_dim=1024, cache=None):
+    def __init__(
+            self, passage_task="retrieval.passage",
+            query_task="retrieval.query", embedding_dim=1024, cache=None):
         """
-        Initializes the JinaAIEmbedder class with the model, tokenizer, and task identifiers.
+        Initializes the JinaAIEmbedder class with the model, tokenizer,
+        and task identifiers.
 
         Parameters:
-        - passage_task (str): Task identifier for embedding documents. Defaults to "retrieval.passage".
-        - query_task (str): Task identifier for embedding queries. Defaults to "retrieval.query".
-        - embedding_dim (int): Dimensionality of the embeddings. Defaults to 1024.
+        - passage_task (str): Task identifier for embedding documents.
+            Defaults to "retrieval.passage".
+        - query_task (str): Task identifier for embedding queries.
+            Defaults to "retrieval.query".
+        - embedding_dim (int): Dimensionality of the embeddings.
+            Defaults to 1024.
         - cache (str): Name of caching table.
-        - api_key_path (str): Path to the JSON file containing the Jina API key. Defaults to "../API_tokens/jina_api.json".
+        - api_key_path (str): Path to the JSON file containing the
+            Jina API key. Defaults to "../API_tokens/jina_api.json".
         """
         from transformers import AutoModel, AutoTokenizer
-        import torch
 
         self.passage_task = passage_task
         self.query_task = query_task
         self.embedding_dim = embedding_dim
 
-        self.model = AutoModel.from_pretrained("jinaai/jina-embeddings-v3", trust_remote_code=True).to('cuda')
-        self.tokenizer = AutoTokenizer.from_pretrained("jinaai/jina-embeddings-v3", trust_remote_code=True)
+        self.model = AutoModel.from_pretrained(
+            "jinaai/jina-embeddings-v3",
+            trust_remote_code=True
+        ).to('cuda')
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            "jinaai/jina-embeddings-v3",
+            trust_remote_code=True
+        )
 
         self.cache = (cache is not None)
         if self.cache:
@@ -61,21 +78,30 @@ class JinaAIEmbedder:
         """
         Generates embeddings for a list of document (passage) texts.
 
-        Caching is not used here by default to avoid storing large numbers of document embeddings.
+        Caching is not used here by default to avoid storing
+        large numbers of document embeddings.
 
         Parameters:
         - texts (List[str]): A list of document texts to embed.
 
         Returns:
-        - List[List[float]]: A list of embedding vectors, each corresponding to a document.
+        - List[List[float]]: A list of embedding vectors, each corresponding
+        to a document.
         """
+
         with torch.no_grad():
-            embeddings = self.model.encode(texts, task=self.passage_task, truncate_dim=self.embedding_dim)
+            embeddings = self.model.encode(
+                texts,
+                task=self.passage_task,
+                truncate_dim=self.embedding_dim
+            )
+
         return embeddings
 
     def embed_query(self, text: str) -> List[float]:
         """
-        Generates an embedding for a single query string, optionally using and updating the cache.
+        Generates an embedding for a single query string, optionally using
+        and updating the cache.
 
         Parameters:
         - text (str): The query text to embed.
@@ -88,21 +114,35 @@ class JinaAIEmbedder:
             return cached_embedding
 
         with torch.no_grad():
-            embedding = self.model.encode([text], task=self.query_task, truncate_dim=self.embedding_dim)[0]
+            embedding = self.model.encode(
+                [text],
+                task=self.query_task,
+                truncate_dim=self.embedding_dim
+            )[0]
+
             self._cache_embedding(text, embedding)
             return embedding
 
+
 class JinaAIAPIEmbedder:
-    def __init__(self, passage_task="retrieval.passage", query_task="retrieval.query", embedding_dim=1024, cache=False, api_key_path="../API_tokens/jina_api.json"):
+    def __init__(
+            self, passage_task="retrieval.passage",
+            query_task="retrieval.query", embedding_dim=1024,
+            api_key_path="../API_tokens/jina_api.json"):  # cache=False,
         """
-        Initializes the JinaAIEmbedder class with the model, tokenizer, and task identifiers.
+        Initializes the JinaAIEmbedder class with the model, tokenizer,
+        and task identifiers.
 
         Parameters:
-        - passage_task (str): Task identifier for embedding documents. Defaults to "retrieval.passage".
-        - query_task (str): Task identifier for embedding queries. Defaults to "retrieval.query".
-        - embedding_dim (int): Dimensionality of the embeddings. Defaults to 1024.
-        - cache (str): Name of caching table.
-        - api_key_path (str): Path to the JSON file containing the Jina API key. Defaults to "../API_tokens/jina_api.json".
+        - passage_task (str): Task identifier for embedding documents.
+            Defaults to "retrieval.passage".
+        - query_task (str): Task identifier for embedding queries.
+            Defaults to "retrieval.query".
+        - embedding_dim (int): Dimensionality of the embeddings.
+            Defaults to 1024.
+        - cache (str): Name of caching table.  # BUG: cache is unused
+        - api_key_path (str): Path to the JSON file containing
+            the Jina API key. Defaults to "../API_tokens/jina_api.json".
         """
         self.passage_task = passage_task
         self.query_task = query_task
@@ -112,11 +152,12 @@ class JinaAIAPIEmbedder:
 
     def api_embed(self, texts, task="retrieval.query"):
         """
-        Generates an embedding for the given text using the Jina Embeddings API.
+        Generates an embedding for the given text using the Jina Embeddings API
 
         Parameters:
         - text (str): The text to embed.
-        - task (str): The task identifier (e.g., "retrieval.query" or "retrieval.passage").
+        - task (str): The task identifier
+            (e.g., "retrieval.query" or "retrieval.passage").
 
         Returns:
         - np.ndarray: The resulting embedding vector as a NumPy array.
@@ -146,7 +187,8 @@ class JinaAIAPIEmbedder:
         embeddings = []
         for item in response_data['data']:
             binary_data = base64.b64decode(item['embedding'])
-            embedding_array = np.frombuffer(binary_data, dtype='<f4')  # Ensure float32 format
+            # Ensure float32 format for compatibility across models
+            embedding_array = np.frombuffer(binary_data, dtype='<f4')
             embeddings.append(embedding_array.tolist())
 
         return embeddings
@@ -155,20 +197,23 @@ class JinaAIAPIEmbedder:
         """
         Generates embeddings for a list of document (passage) texts.
 
-        Caching is not used here by default to avoid storing large numbers of document embeddings.
+        Caching is not used here by default to avoid storing large numbers
+        of document embeddings.
 
         Parameters:
         - texts (List[str]): A list of document texts to embed.
 
         Returns:
-        - List[List[float]]: A list of embedding vectors, each corresponding to a document.
+        - List[List[float]]: A list of embedding vectors, each corresponding
+        to a document.
         """
         embeddings = self.api_embed(texts, task=self.passage_task)
         return embeddings
 
     def embed_query(self, text: str) -> List[float]:
         """
-        Generates an embedding for a single query string, optionally using and updating the cache.
+        Generates an embedding for a single query string, optionally using
+        and updating the cache.
 
         Parameters:
         - text (str): The query text to embed.
@@ -179,25 +224,30 @@ class JinaAIAPIEmbedder:
         embedding = self.api_embed([text], task=self.query_task)
         return embedding
 
+
 class JinaAIReranker:
     def __init__(self, max_tokens=1024):
         """
-        Initializes the JinaAIReranker with a maximum token length and the Jina Reranker model.
+        Initializes the JinaAIReranker with a maximum token length
+        and the Jina Reranker model.
 
         Parameters:
-        - max_tokens (int): Maximum sequence length for the reranker (must be <= 1024).
+        - max_tokens (int): Maximum sequence length for the reranker
+        (must be <= 1024).
 
         Raises:
         - ValueError: If max_tokens is greater than 1024.
         """
         from transformers import AutoModelForSequenceClassification
-        import torch
 
         if max_tokens > 1024:
             raise ValueError("Max token should be less than or equal to 1024")
 
         self.max_tokens = max_tokens
-        self.model = AutoModelForSequenceClassification.from_pretrained('jinaai/jina-reranker-v2-base-multilingual', trust_remote_code=True).to('cuda')
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            'jinaai/jina-reranker-v2-base-multilingual',
+            trust_remote_code=True
+        ).to('cuda')
 
     def rank(self, query: str, texts: List[str]) -> List[float]:
         """
@@ -208,9 +258,13 @@ class JinaAIReranker:
         - texts (List[str]): A list of document texts to rank.
 
         Returns:
-        - List[float]: A list of relevance scores, each corresponding to one document.
+        - List[float]: A list of relevance scores, each corresponding
+        to one document.
         """
         sentence_pairs = [[query, doc] for doc in texts]
 
         with torch.no_grad():
-            return self.model.compute_score(sentence_pairs, max_length=self.max_tokens)
+            return self.model.compute_score(
+                sentence_pairs,
+                max_length=self.max_tokens
+            )

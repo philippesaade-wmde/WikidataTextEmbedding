@@ -1,13 +1,11 @@
 import os
 import json
-import sys
 from huggingface_hub import login
 from multiprocessing import Process, Value, Queue
 
-sys.path.append('../src')
 
-from wikidataDumpReader import WikidataDumpReader
-from wikidataItemDB import WikidataItem
+from src.wikidataDumpReader import WikidataDumpReader
+from src.wikidataItemDB import WikidataItem
 
 from datasets import Dataset, load_dataset_builder
 
@@ -18,20 +16,30 @@ SKIPLINES = int(os.getenv("SKIPLINES", 0))
 API_KEY_FILENAME = os.getenv("API_KEY", "huggingface_api.json")
 ITERATION = int(os.getenv("ITERATION", 0))
 
-api_key = json.load(open(f"../API_tokens/{API_KEY_FILENAME}"))['API_KEY']
+api_key_fpath = f"../API_tokens/{API_KEY_FILENAME}"
+with open(api_key_fpath) as f_in:
+    api_key = json.load(open(f_in))['API_KEY']
+
 
 def save_to_queue(item, data_queue):
     """Processes and puts cleaned item into the multiprocessing queue."""
     if (item is not None) and (WikidataItem.is_in_wikipedia(item)):
-        claims = WikidataItem.add_labels_batched(item['claims'], query_batch=100)
+        claims = WikidataItem.add_labels_batched(
+            item['claims'],
+            query_batch=100
+        )
         data_queue.put({
             'id': item['id'],
             'labels': json.dumps(item['labels'], separators=(',', ':')),
-            'descriptions': json.dumps(item['descriptions'], separators=(',', ':')),
+            'descriptions': json.dumps(
+                item['descriptions'],
+                separators=(',', ':')
+            ),
             'aliases': json.dumps(item['aliases'], separators=(',', ':')),
             'sitelinks': json.dumps(item['sitelinks'], separators=(',', ':')),
             'claims': json.dumps(claims, separators=(',', ':'))
         })
+
 
 def chunk_generator(filepath, num_processes=2, queue_size=5000, skip_lines=0):
     """
@@ -53,8 +61,12 @@ def chunk_generator(filepath, num_processes=2, queue_size=5000, skip_lines=0):
 
     # Define a function to feed items into the queue
     def run_reader():
-        wikidata.run(lambda item: save_to_queue(item, data_queue),
-                     max_iterations=None, verbose=True)
+        wikidata.run(
+            lambda item: save_to_queue(item, data_queue),
+            max_iterations=None,
+            verbose=True
+        )
+
         with finished.get_lock():
             finished.value = 1
 
@@ -69,7 +81,8 @@ def chunk_generator(filepath, num_processes=2, queue_size=5000, skip_lines=0):
             break
         try:
             item = data_queue.get(timeout=1)
-        except:
+        except Exception as e:
+            print(f'Exception: {e}')
             continue
         if item:
             yield item
@@ -77,26 +90,29 @@ def chunk_generator(filepath, num_processes=2, queue_size=5000, skip_lines=0):
     # Wait for the reader process to exit
     reader_proc.join()
 
-# Now process each chunk file and push to the same Hugging Face repo
-HF_REPO_ID = "wikidata"  # Change to your actual repo on Hugging Face
 
-login(token=api_key)
-builder = load_dataset_builder("philippesaade/wikidata")
-for i in range(0, 113):
-    split_name = f"chunk_{i}"
-    if split_name not in builder.info.splits:
-        filepath = f"../data/Wikidata/latest-all-chunks/chunk_{i}.json.gz"
+if __name__ == "__main__":
+    # TODO: Convert the following into a function and run it here
+    # Now process each chunk file and push to the same Hugging Face repo
+    HF_REPO_ID = "wikidata"  # Change to your actual repo on Hugging Face
 
-        print(f"Processing {filepath} -> split={split_name}")
+    login(token=api_key)
+    builder = load_dataset_builder("philippesaade/wikidata")
+    for i in range(0, 113):
+        split_name = f"chunk_{i}"
+        if split_name not in builder.info.splits:
+            filepath = f"../data/Wikidata/latest-all-chunks/chunk_{i}.json.gz"
 
-        # Create a Dataset from the generator
-        ds_chunk = Dataset.from_generator(lambda: chunk_generator(
-            filepath,
-            num_processes=NUM_PROCESSES,
-            queue_size=QUEUE_SIZE,
-            skip_lines=SKIPLINES
-        ))
+            print(f"Processing {filepath} -> split={split_name}")
 
-        # Push each chunk as a separate "split" under the same dataset repo
-        ds_chunk.push_to_hub(HF_REPO_ID, split=split_name)
-        print(f"Chunk {ITERATION} pushed to {HF_REPO_ID} as {split_name}.")
+            # Create a Dataset from the generator
+            ds_chunk = Dataset.from_generator(lambda: chunk_generator(
+                filepath,
+                num_processes=NUM_PROCESSES,
+                queue_size=QUEUE_SIZE,
+                skip_lines=SKIPLINES
+            ))
+
+            # Push each chunk as a separate "split" under the same dataset repo
+            ds_chunk.push_to_hub(HF_REPO_ID, split=split_name)
+            print(f"Chunk {ITERATION} pushed to {HF_REPO_ID} as {split_name}.")

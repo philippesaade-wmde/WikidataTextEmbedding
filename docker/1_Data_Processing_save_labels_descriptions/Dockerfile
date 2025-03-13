@@ -22,5 +22,7 @@ COPY ./src /src
 # Set up the volume for the data folder
 VOLUME [ "/data" ]
 
+ENV PYTHONPATH="${PYTHONPATH}:/src"
+
 # Run the Python script
 CMD ["python", "run.py"]
