@@ -28,5 +28,7 @@ COPY ./API_tokens /API_tokens
 # Set up the volume for the data folder
 VOLUME [ "/data" ]
 
+ENV PYTHONPATH="${PYTHONPATH}:/"
+
 # Run the Python script
 CMD ["python", "run.py"]

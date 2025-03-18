@@ -1,94 +1,167 @@
-from wikidataItemDB import WikidataItem
 import requests
 import time
 import json
-from datetime import date, datetime
 import re
 import importlib
 
+from datetime import date, datetime
+from src.wikidataItemDB import WikidataItem
+
 class WikidataTextifier:
+    """_summary_
+    """
     def __init__(self, language='en', langvar_filename=None):
         """
         Initializes the WikidataTextifier with the specified language.
+        Expected use cases: Hugging Face parquet or sqlite database.
 
         Parameters:
-        - language (str): The language code used by the textifier (default is "en").
+        - language (str): The language code used by the textifier
+            Default is "en".
         """
 
         self.language = language
-        langvar_filename = (langvar_filename if langvar_filename is not None else language)
+        langvar_filename = (
+            langvar_filename if langvar_filename is not None else language
+        )
         try:
-            # Importing custom functions and variables from a formating python script in the language_variables folder.
-            self.langvar = importlib.import_module(f"language_variables.{langvar_filename}")
+            # Importing custom functions and variables
+            # from a formating python script in the language_variables folder.
+            self.langvar = importlib.import_module(
+                f"src.language_variables.{langvar_filename}"
+            )
         except Exception as e:
             raise ValueError(f"Language file for '{language}' not found.")
 
     def get_label(self, id, labels=None):
+        """Retrieves the label for a Wikidata entity in a specified language.
+
+        Args:
+            id (str): QID or PID from the ID column in the Wikidata db or JSON.
+            labels (dict, optional): Wikidata labels in all available languages, else None. Defaults to None.
+
+        Returns:
+            str: Wikidata label from specified language or mul[tilingual].
+        """
         if (labels is None) or (len(labels) == 0):
+            # If the labels are not provided, fetch them from the Wikidata SQLDB
+            # TODO: Fetch from the Wikidata API if not found in the SQLDB
             labels = WikidataItem.get_labels(id)
 
-        if (type(labels) is str):
+        if isinstance(labels, str):
+            # If the labels are a string, return them as is
             return labels
 
-        # Take the label from the language, if missing take it from the multiligual class
-        label = labels[self.language] if (self.language in labels) else (labels['mul'] if ('mul' in labels) else None)
+        # Take the label from the language, if missing take it 
+        # from the multiligual class
 
-        if type(label) is dict:
-            label = label['value']
+        label = labels.get(self.language)
+        if label is None:
+            label = labels.get('mul')
+
+        if isinstance(label, dict):
+            label = label.get('value')
+
         return label
 
     def get_description(self, id, descriptions=None):
+        """Retrieves the description for a Wikidata entity 
+            in the specified language.
+
+        Args:
+            id (str): QID or PID from the ID column in the Wikidata db or JSON.
+            descriptions (dict, optional): Wikidata descriptions in all available languages, else None. Defaults to None.
+
+        Returns:
+            str: Wikidata description from specified language or mul[tilingual].
+        """
         if (descriptions is None) or (len(descriptions) == 0):
+            # If the descriptions are not provided, fetch them from the Wikidata SQLDB
+            # TODO: Fetch from the Wikidata API if not found in the SQLDB
             descriptions = WikidataItem.get_descriptions(id)
 
-        if (type(descriptions) is str):
+        if isinstance(descriptions, str):
             return descriptions
 
-        # Take the description from the language, if missing take it from the multiligual class
-        description = descriptions[self.language] if (self.language in descriptions) else (descriptions['mul'] if ('mul' in descriptions) else None)
 
-        if type(description) is dict:
-            description = description['value']
+        # Take the description from the language,
+        # if missing take it from the multiligual class
+        description = descriptions.get(self.language)
+        if description is None:
+            description = descriptions.get('mul')
+
+        if isinstance(description, dict):
+            description = description.get('value')
+
         return description
 
+
     def get_aliases(self, aliases):
+        """Retrieves the aliases for a Wikidata entity in the specified language.
+
+        Args:
+            aliases (dict, optional): Wikidata aliases in all available languages, else None. Defaults to None.
+
+        Returns:
+            list: Wikidata aliases from specified language and mul[tilingual].
+        """
         if (type(aliases) is list):
             return aliases
 
         if aliases is None:
             return []
 
+        # Combine the aliases from the specified language and the
+        # multilingual class. Use set format to avoid duplicates.
         aliases = set()
         if self.language in aliases:
-            aliases = set([x['value'] for x in aliases[self.language]])
+            aliases.update([x['value'] for x in aliases[self.language]])
+
         if 'mul' in aliases:
-            aliases = aliases | set([x['value'] for x in aliases['mul']])
+            aliases.update([x['value'] for x in aliases['mul']])
+
         return list(aliases)
 
     def entity_to_text(self, entity, properties=None):
-        """
-        Converts a Wikidata entity into a human-readable text string.
+        """Converts a Wikidata entity into a human-readable text string.
 
-        Parameters:
-        - entity: A Wikidata entity object containing entity data (label, description, claims, etc.).
-        - properties (dict or None): A dictionary of properties (claims). If None, the properties will be derived from entity.claims.
+        Args:
+            entity (obj):  A Wikidata entity object containing
+                entity data (label, description, claims, etc.)
+            properties (dict or None, optional): A dictionary of
+                properties (claims). If None, the properties will be derived
+                from entity.claims. Defaults to None.
 
         Returns:
-        - str: A human-readable representation of the entity, its description, aliases, and claims.
+            (str): A human-readable representation of the entity, its description, aliases, and claims.
         """
         if properties is None:
+            # If properties are not provided, fetch them from the entity
             properties = self.properties_to_dict(entity.claims)
 
+        # Get the label, description, and aliases for the entity
         label = self.get_label(entity.id, labels=entity.label)
 
-        description = self.get_description(entity.id, descriptions=entity.description)
+        description = self.get_description(
+            entity.id,
+            descriptions=entity.description
+        )
         if (description is None) or (len(description) == 0):
+            # If the description is missing, try to get it
+            # from the `instance_of` property
             instanceof = self.get_label('P31')
             description = properties.get(instanceof, '')
 
         aliases = self.get_aliases(entity.aliases)
 
-        return self.langvar.merge_entity_text(label, description, aliases, properties)
+        # Merge the label, description, aliases, and properties into a single
+        # text string as the Data Model per language through langvar descriptors
+        return self.langvar.merge_entity_text(
+            label,
+            description,
+            aliases,
+            properties
+        )
 
     def properties_to_dict(self, properties):
         """
@@ -96,10 +169,11 @@ class WikidataTextifier:
 
         Parameters:
         - properties (dict): A dictionary of claims keyed by property IDs.
-                             Each value is a list of claim statements for that property.
+            Each value is a list of claim statements for that property.
 
         Returns:
-        - dict: A dictionary mapping property labels to a list of their parsed values (and qualifiers).
+        - dict: A dictionary mapping property labels to a list of
+            their parsed values (and qualifiers).
         """
         properties_dict = {}
         for pid, claim in properties.items():
@@ -109,7 +183,9 @@ class WikidataTextifier:
             for c in claim:
                 try:
                     value = self.mainsnak_to_value(c.get('mainsnak', c))
-                    qualifiers = self.qualifiers_to_dict(c.get('qualifiers', {}))
+                    qualifiers = self.qualifiers_to_dict(
+                        c.get('qualifiers', {})
+                    )
                     rank = c.get('rank', 'normal').lower()
 
                     if value is None:
@@ -117,7 +193,10 @@ class WikidataTextifier:
                         break
 
                     elif len(value) > 0:
-                        # If a preferred rank exists, include values that are only preferred. Else include only values that are ranked normal (values with a depricated rank are never included)
+                        # If a preferred rank exists, include values that are
+                        # only preferred. Else include only values that are
+                        # ranked normal (values with a depricated rank are
+                        # never included)
                         if ((not rank_preferred_found) and (rank == 'normal')) or (rank == 'preferred'):
                             if (not rank_preferred_found) and (rank == 'preferred'):
                                 rank_preferred_found = True

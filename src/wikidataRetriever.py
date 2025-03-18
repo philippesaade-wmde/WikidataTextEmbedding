@@ -1,16 +1,18 @@
 import time
 import json
-from wikidataCache import create_cache_embedding_model
+from src.wikidataCache import create_cache_embedding_model
 
 class AstraDBConnect:
-    def __init__(self, datastax_token, collection_name, model='nvidia', batch_size=8, cache_embeddings=None):
+    def __init__(
+            self, datastax_token, collection_name, model='jina', 
+            batch_size=8, cache_embeddings=None):
         """
         Initialize the AstraDBConnect object with the corresponding embedding model.
 
         Parameters:
         - datastax_token (dict): Credentials for DataStax Astra, including token and API endpoint.
         - collection_name (str): Name of the collection (table) where data is stored.
-        - model (str): The embedding model to use ("nvidia" or "jina"). Default is 'nvidia'.
+        - model (str): The embedding model to use. Default is 'jina'.
         - batch_size (int): Number of documents to accumulate before pushing to AstraDB. Default is 8.
         - cache_embeddings (str): Name of the cache table.
         """
@@ -21,7 +23,7 @@ class AstraDBConnect:
         from multiprocessing import Queue
 
         from transformers import AutoTokenizer
-        from JinaAI import JinaAIEmbedder, JinaAIAPIEmbedder
+        from src.JinaAI import JinaAIEmbedder, JinaAIAPIEmbedder
 
         ASTRA_DB_APPLICATION_TOKEN = datastax_token['ASTRA_DB_APPLICATION_TOKEN']
         ASTRA_DB_API_ENDPOINT = datastax_token["ASTRA_DB_API_ENDPOINT"]

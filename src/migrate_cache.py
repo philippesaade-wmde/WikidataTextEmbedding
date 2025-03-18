@@ -4,7 +4,9 @@ import base64
 import numpy as np
 from tqdm import tqdm
 
-DB_PATH = "../data/Wikidata/sqlite_cacheembeddings.db"
+# Change this to match your actual database path
+DB_PATH = "data/Wikidata/wikidata_cache.db"
+
 TABLE_NAME = "wikidata_prototype"  # Change this to match your actual table name
 BATCH_SIZE = 5000  # Process in smaller batches to avoid memory overload
 
@@ -13,6 +15,8 @@ def convert_embeddings():
     Convert JSON-stored embeddings into Base64-encoded binary format in batches.
     Uses `fetchmany(BATCH_SIZE)` to process records iteratively.
     """
+    # TODO: Migrate away from global variables
+    print(f"Converting embeddings in {DB_PATH}...")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 

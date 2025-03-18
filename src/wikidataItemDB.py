@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Text, create_engine, text
+from sqlalchemy import Column, Text, String, Integer, create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator, Boolean
@@ -6,13 +6,17 @@ import json
 import re
 
 """
-SQLite database setup for storing Wikidata labels in all languages.
+SQLite database setup for storing Wikidata labels & descriptions
+in all languages.
 """
-engine = create_engine(f'sqlite:///../data/Wikidata/sqlite_wikidata_items.db',
-    pool_size=5,       # Limit the number of open connections
-    max_overflow=10,   # Allow extra connections beyond pool_size
-    pool_recycle=10    # Recycle connections every 10 seconds
+
+SQLITEDB_PATH = '../data/Wikidata/sqlite_wikidata_items.db'
+engine = create_engine(f'sqlite:///{SQLITEDB_PATH}',
+    pool_size=5,  # Limit the number of open connections
+    max_overflow=10,  # Allow extra connections beyond pool_size
+    pool_recycle=10  # Recycle connections every 10 seconds
 )
+
 Base = declarative_base()
 Session = sessionmaker(bind=engine)
 
@@ -36,6 +40,11 @@ class WikidataItem(Base):
 
     __tablename__ = 'item'
 
+    # TODO: convert ID to Integer and store existin IDs as qpid
+    """
+    id = Column(Integer, primary_key=True)
+    qpid = Column(String, unique=True, index=True)
+    """
     id = Column(Text, primary_key=True)
     labels = Column(JSONType)
     descriptions = Column(JSONType)
@@ -53,26 +62,31 @@ class WikidataItem(Base):
         Returns:
         - bool: True if the operation was successful, False otherwise.
         """
-        worked = False
+        worked = False  # Assume the operation failed
         with Session() as session:
             try:
-                session.execute(
-                    text(
-                        """
-                        INSERT INTO item (id, labels, descriptions, in_wikipedia)
-                        VALUES (:id, :labels, :descriptions, :in_wikipedia)
-                        ON CONFLICT(id) DO NOTHING
-                        """
-                    ),
-                    data
+                # Use a text statement to operate bulk insert
+                # SQLAlchemy's ORM is unable to handle bulk inserts
+                # with ON CONFLICT.
+
+                insert_stmt = text(
+                    """
+                    INSERT INTO item (id, labels, descriptions, in_wikipedia)
+                    VALUES (:id, :labels, :descriptions, :in_wikipedia)
+                    ON CONFLICT(id) DO NOTHING
+                    """
                 )
+
+                # Execute the insert statement for each data entry.
+                session.execute(insert_stmt, data)
                 session.commit()
                 session.flush()
-                worked = True
+                worked = True  # Mark the operation as successful
             except Exception as e:
                 session.rollback()
                 print(e)
-        return worked
+
+        return worked  # Return the operation status
 
     @staticmethod
     def add_labels(id, labels, descriptions, in_wikipedia):
@@ -259,9 +273,12 @@ class WikidataItem(Base):
                 unit_id = data['unit'].split('/')[-1]
                 ids.add(unit_id)
 
-            if ('datatype' in data
-                and 'datavalue' in data
-                and data['datatype'] in ('wikibase-item', 'wikibase-property')):
+            datatype_in_data = 'datatype' in data
+            datavalue_in_data = 'datavalue' in data
+            data_datatype = data['datatype'] in (
+                'wikibase-item', 'wikibase-property'
+            )
+            if datatype_in_data and datavalue_in_data and data_datatype:
                 ids.add(data['datavalue'])
 
             for value in data.values():

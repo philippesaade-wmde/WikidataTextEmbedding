@@ -141,10 +141,11 @@ services:
         MODEL: "jinaapi"
         API_KEY: "datastax_wikidata.json"
         EMBED_BATCH_SIZE: 100
-        NUM_PROCESSES: 16
+        # QUEUE_SIZE: 5000
+        NUM_PROCESSES: 23
         OFFSET: 0
         COLLECTION_NAME: "wikidata_prototype"
         LANGUAGE: 'en'
         TEXTIFIER_LANGUAGE: 'en'
-        CHUNK_NUM: 5
+        # CHUNK_NUM: 5
       network_mode: "host"

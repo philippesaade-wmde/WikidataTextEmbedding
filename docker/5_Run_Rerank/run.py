@@ -1,14 +1,16 @@
-import sys
-sys.path.append('../src')
-
-from wikidataDB import WikidataEntity
-from wikidataEmbed import WikidataTextifier
-from JinaAI import JinaAIReranker
-
 from tqdm import tqdm
 import pandas as pd
 import os
 import pickle
+
+# BUG: Reviwer assumed wikidataDB was converted to wikidataLangDB
+# Bug: Reviwer assumed wikidataDB.WikidataEntity was converted
+#   to wikidataLangDB.WikidataLang
+# from src.wikidataDB import WikidataEntity
+from src.wikidataLangDB import WikidataLang
+from src.wikidataEmbed import WikidataTextifier
+from src.JinaAI import JinaAIReranker
+
 
 MODEL = os.getenv("MODEL", "jina")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 100))
@@ -20,16 +22,24 @@ RESTART = os.getenv("RESTART", "false").lower() == "true"
 textifier = WikidataTextifier(language=LANGUAGE)
 reranker = JinaAIReranker()
 
-eval_data = pickle.load(open(f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl", "rb"))
 
+pkl_fpath = f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl"
+with open(pkl_fpath, "rb") as pkl_file:
+    eval_data = pickle.load(pkl_file)
+
+
+# Rerank the QIDs
 def rerank_qids(query, qids, reranker, textifier):
-    entities = [WikidataEntity.get_entity(qid) for qid in qids]
+    # Bug: Reviwer assumed WikidataEntity was converted to WikidataLang
+    # entities = [WikidataEntity.get_entity(qid) for qid in qids]
+    entities = [WikidataLang.get_entity(qid) for qid in qids]
     texts = [textifier.entity_to_text(entity) for entity in entities]
     scores = reranker.rank(query, texts)
 
     score_zip = zip(scores, qids)
     score_zip = sorted(score_zip, key=lambda x: -x[0])
     return [x[1] for x in score_zip]
+
 
 if __name__ == "__main__":
     with tqdm(total=len(eval_data), disable=False) as progressbar:
@@ -42,12 +52,33 @@ if __name__ == "__main__":
             row = eval_data[row_to_process].iloc[i]
 
             # Rerank the QIDs
-            ranked_qids = rerank_qids(row[QUERY_COL], row['Retrieval QIDs'], reranker, textifier)
+            ranked_qids = rerank_qids(
+                row[QUERY_COL],
+                row['Retrieval QIDs'],
+                reranker,
+                textifier
+            )
 
-            eval_data.loc[[row.index], 'Reranked QIDs'] = pd.Series(ranked_qids).values
+            eval_data.loc[[row.index], 'Reranked QIDs'] = pd.Series(
+                ranked_qids
+            ).values
 
+            # TODO: create new function to update tqdm progressbar
+            # tqdm is not working in docker compose. This is the alternative
             progressbar.update(1)
-            tqdm.write(progressbar.format_meter(progressbar.n, progressbar.total, progressbar.format_dict["elapsed"])) # tqdm is not wokring in docker compose. This is the alternative
+            tqdm.write(
+                progressbar.format_meter(
+                    progressbar.n,
+                    progressbar.total,
+                    progressbar.format_dict["elapsed"]
+                )
+            )
             if progressbar.n % 100 == 0:
-                pickle.dump(eval_data, open(f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl", "wb"))
-        pickle.dump(eval_data, open(f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl", "wb"))
+                pkl_fpath = f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl"
+                with open(pkl_fpath, "wb") as pkl_file:
+                    pickle.dump(eval_data, pkl_file, "wb")
+
+        # TODO: Why is this definition and open twice at the end?
+        pkl_fpath = f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl"
+        with open(pkl_fpath, "wb") as pkl_file:
+            pickle.dump(eval_data, pkl_file, "wb")
