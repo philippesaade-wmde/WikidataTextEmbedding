@@ -1,6 +1,6 @@
 import time
 import json
-from src.wikidataCache import create_cache_embedding_model
+from src.wikidataCache import create_cache_embedding_db
 
 class AstraDBConnect:
     def __init__(
@@ -37,7 +37,9 @@ class AstraDBConnect:
 
         self.cache_on = (cache_embeddings is not None)
         if self.cache_on:
-            self.cache_model = create_cache_embedding_model(cache_embeddings)
+            self.cache_model = create_cache_embedding_db(
+                table_name=cache_embeddings
+            )
 
         client = DataAPIClient(datastax_token['ASTRA_DB_APPLICATION_TOKEN'])
         database0 = client.get_database(datastax_token['ASTRA_DB_API_ENDPOINT'])

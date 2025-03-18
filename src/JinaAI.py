@@ -7,7 +7,7 @@ import base64
 
 
 from typing import List
-from src.wikidataCache import create_cache_embedding_model
+from src.wikidataCache import create_cache_embedding_db
 
 
 class JinaAIEmbedder:
@@ -46,7 +46,7 @@ class JinaAIEmbedder:
 
         self.cache = (cache is not None)
         if self.cache:
-            self.cache_model = create_cache_embedding_model(cache)
+            self.cache_model = create_cache_embedding_db(table_name=cache)
 
     def _cache_embedding(self, text: str, embedding: List[float]):
         """

@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime
 from tqdm import tqdm
 
-from src.wikidataLangDB import Session, WikidataLang
+from src.wikidataLangDB import create_wikidatalang_db
 from src.wikidataEmbed import WikidataTextifier
 from src.wikidataRetriever import AstraDBConnect, KeywordSearchConnect
 
@@ -24,11 +24,12 @@ LANGUAGE = os.getenv("LANGUAGE", 'en')
 TEXTIFIER_LANGUAGE = os.getenv("TEXTIFIER_LANGUAGE", None)
 DUMPDATE = os.getenv("DUMPDATE", '09/18/2024')
 
+DB_PATH = os.getenv("DB_PATH", f'sqlite_{LANGUAGE}wiki.db')
+
+# Run Keyword search with an elastic search database instead of a vector search.
 ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
 ELASTICSEARCH = os.getenv("ELASTICSEARCH", "false").lower() == "true"
 
-# TODO: refactor script into function and call after __name__ == "__main__"
-# Load the Database
 if not COLLECTION_NAME:
     raise ValueError("The COLLECTION_NAME environment variable is required")
 
@@ -38,13 +39,13 @@ if not TEXTIFIER_LANGUAGE:
 if not API_KEY_FILENAME:
     API_KEY_FILENAME = os.listdir("../API_tokens")[0]
 
-with open(f"../API_tokens/{API_KEY_FILENAME}") as json_in:
-    datastax_token = json.load(json_in)
-
 textifier = WikidataTextifier(
     language=LANGUAGE,
     langvar_filename=TEXTIFIER_LANGUAGE
 )
+
+WikidataLang = create_wikidatalang_db(db_filname=DB_PATH)
+
 
 if ELASTICSEARCH:
     graph_store = KeywordSearchConnect(
@@ -52,6 +53,9 @@ if ELASTICSEARCH:
         index_name=COLLECTION_NAME
     )
 else:
+    with open(f"../API_tokens/{API_KEY_FILENAME}") as json_in:
+        datastax_token = json.load(json_in)
+
     graph_store = AstraDBConnect(
         datastax_token,
         COLLECTION_NAME,
@@ -60,49 +64,65 @@ else:
         cache_embeddings=False
     )
 
-# TODO: refactor script into function and call after __name__ == "__main__"
-# Load the Sample IDs
-sample_ids = None
-if SAMPLE:
-    sample_ids = pickle.load(open(SAMPLE_PATH, "rb"))
-    sample_ids = sample_ids[sample_ids['In Wikipedia']]
-    total_entities = len(sample_ids)
 
-    def get_entity(session):
-        sample_qids = list(sample_ids['QID'].values)[OFFSET:]
-        sample_qid_batches = [
-            sample_qids[i:i + QUERY_BATCH_SIZE]
-            for i in range(0, len(sample_qids), QUERY_BATCH_SIZE)
-        ]
+def get_data_generator():
+    """Returns an entity generator function and the total number of entities.
 
-        # For each batch of sample QIDs, fetch the entities from the database
-        for qid_batch in sample_qid_batches:
-            entities = session.query(WikidataLang).filter(
-                    WikidataLang.id.in_(qid_batch)
+    Depending on whether SAMPLE mode is enabled, the function either:
+    - Loads a sample dataset and prepares an entity generator for it.
+    - Uses the full dataset and prepares an entity generator for all entities.
+
+    Returns:
+        tuple:
+            - function: A generator function (`get_entity(session)`) that yields entities from the database.
+            - int: The total number of entities.
+
+    Yields:
+        Entity: An entity object retrieved from the database.
+    """
+    if SAMPLE:
+        sample_ids = pickle.load(open(SAMPLE_PATH, "rb"))
+        sample_ids = sample_ids[sample_ids['In Wikipedia']]
+        total_entities = len(sample_ids)
+
+        def get_entity(session):
+            sample_qids = list(sample_ids['QID'].values)[OFFSET:]
+            sample_qid_batches = [
+                sample_qids[i:i + QUERY_BATCH_SIZE]
+                for i in range(0, len(sample_qids), QUERY_BATCH_SIZE)
+            ]
+
+            # For each batch of sample QIDs, fetch the entities from the database
+            for qid_batch in sample_qid_batches:
+                entities = session.query(WikidataLang).filter(
+                        WikidataLang.id.in_(qid_batch)
+                    ).yield_per(QUERY_BATCH_SIZE)
+
+                for entity in entities:
+                    yield entity
+    else:
+        total_entities = 9203786
+
+        def get_entity(session):
+            entities = session.query(
+                WikidataLang).offset(
+                    OFFSET
                 ).yield_per(QUERY_BATCH_SIZE)
 
             for entity in entities:
                 yield entity
-else:
-    total_entities = 9203786
 
-    def get_entity(session):
-        entities = session.query(
-            WikidataLang).offset(
-                OFFSET
-            ).yield_per(QUERY_BATCH_SIZE)
-
-        for entity in entities:
-            yield entity
+    return get_entity, total_entities
 
 
-if __name__ == "__main__":
-    # TODO: refactor script into function and call after __name__ == "__main__"
+def add_items_to_db():
+    """Embed each Wikidata items and push the content to the database.
+    """
+    get_entity, total_entities = get_data_generator()
+
     with tqdm(total=total_entities-OFFSET) as progressbar:
-        with Session() as session:
+        with WikidataLang.get_session() as session:
             entity_generator = get_entity(session)
-            doc_batch = []
-            ids_batch = []
 
             for entity in entity_generator:
                 progressbar.update(1)
@@ -150,3 +170,6 @@ if __name__ == "__main__":
                 )
 
             graph_store.push_batch()
+
+if __name__ == "__main__":
+    add_items_to_db()

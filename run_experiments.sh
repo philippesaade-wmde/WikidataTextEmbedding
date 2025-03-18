@@ -61,5 +61,5 @@
 # docker compose run --build -e CHUNK_NUM=109 create_prototype
 
 for chunk_num in `seq 101 -1 100`;
-    do docker compose run --build -e CHUNK_NUM=$chunk_num create_prototype; 
+    do docker compose run --build -e CHUNK_NUM=$chunk_num create_prototype;
 done

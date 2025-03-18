@@ -4,7 +4,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator
 
 import os
-import json
 import base64
 import numpy as np
 
@@ -12,31 +11,6 @@ import numpy as np
 SQLite database setup for caching the query embeddings for a faster
 evaluation process.
 """
-
-# TODO: Move to a configuration file
-wikidata_cache_file = "wikidata_cache.db"
-
-wikidata_cache_dir = "../data/Wikidata"
-wikidata_cache_path = os.path.join(wikidata_cache_dir, wikidata_cache_file)
-
-try:
-    if not os.path.exists(wikidata_cache_dir):
-        os.makedirs(wikidata_cache_dir)
-except OSError as e:
-    print(f"Error creating directory {wikidata_cache_dir}: {e}")
-
-assert os.path.exists(wikidata_cache_dir), \
-    f"Error creating directory {wikidata_cache_dir}"
-
-engine = create_engine(
-    f'sqlite:///{wikidata_cache_path}',
-    pool_size=5,       # Limit the number of open connections
-    max_overflow=10,   # Allow extra connections beyond pool_size
-    pool_recycle=10    # Recycle connections every 10 seconds
-)
-
-Base = declarative_base()
-Session = sessionmaker(bind=engine)
 
 class EmbeddingType(TypeDecorator):
     """Custom SQLAlchemy type for storing embeddings as Base64 strings in SQLite."""
@@ -62,15 +36,43 @@ class EmbeddingType(TypeDecorator):
             return embedding_array.tolist()
         return None
 
-
-def create_cache_embedding_model(table_name):
+def create_cache_embedding_db(
+        db_filname="wikidata_cache.db",
+        table_name="wikidata_prototype"
+    ):
     """Factory function to create a dynamic CacheEmbeddings model."""
+
+    wikidata_cache_dir = os.path.abspath("../data/Wikidata")
+    wikidata_cache_path = os.path.join(wikidata_cache_dir, db_filname)
+
+    # Safe directory creation if it's missing
+    os.makedirs(wikidata_cache_dir, exist_ok=True)
+
+    engine = create_engine(
+        f'sqlite:///{wikidata_cache_path}',
+        pool_size=5,       # Limit the number of open connections
+        max_overflow=10,   # Allow extra connections beyond pool_size
+        pool_recycle=10    # Recycle connections every 10 seconds
+    )
+
+    Base = declarative_base()
+    Session = sessionmaker(bind=engine)
 
     class CacheEmbeddings(Base):
         __tablename__ = table_name
 
         id = Column(Text, primary_key=True)
         embedding = Column(EmbeddingType)
+
+        @staticmethod
+        def get_session():
+            """
+            Get a new session from the scoped session factory.
+
+            Returns:
+            - Session: A SQLAlchemy session object.
+            """
+            return Session()
 
         @staticmethod
         def add_cache(id, embedding):

@@ -30,13 +30,6 @@ OUTPUT_FILENAME = (
     f"DB({DB_LANGUAGE})-Query({QUERY_LANGUAGE})"
 )
 
-# TODO: remove unneccesary commented out code
-# OUTPUT_FILENAME = (
-#     f"retrieval_results_{EVALUATION_PATH.split('/')[-2]}-"
-#     f"keyword-search-{LANGUAGE}"
-# )
-
-
 if PREFIX != "":
     OUTPUT_FILENAME += PREFIX
 
@@ -73,41 +66,49 @@ if not QUERY_COL:
 if not EVALUATION_PATH:
     raise ValueError("The EVALUATION_PATH environment variable is required")
 
-outputfile_exists = os.path.exists(
-    f"../data/Evaluation Data/{OUTPUT_FILENAME}.pkl"
-)
+OUTPUT_FILE_PATH = os.path.join("../data/Evaluation Data/",
+                                f"{OUTPUT_FILENAME}.pkl")
+
+outputfile_exists = os.path.exists(OUTPUT_FILE_PATH)
 if not RESTART and outputfile_exists:
+    # Load pre-existing evaluation data
     print(f"Loading data from: {OUTPUT_FILENAME}")
-    pkl_fpath = f"../data/Evaluation Data/{OUTPUT_FILENAME}.pkl"
-    with open(pkl_fpath, "rb") as pkl_file:
+    with open(OUTPUT_FILE_PATH, "rb") as pkl_file:
         eval_data = pickle.load(pkl_file)
 else:
+    # If you run this for the first time, copy the evaluation data from origine.
     pkl_fpath = f"../data/Evaluation Data/{EVALUATION_PATH}"
     with open(pkl_fpath, "rb") as pkl_file:
         eval_data = pickle.load(pkl_file)
 
+# If language is specified, take only the columns
+# with queries in the specified language.
 if 'Language' in eval_data.columns:
     eval_data = eval_data[eval_data['Language'] == QUERY_LANGUAGE]
 
-if __name__ == "__main__":
+# Setup the evaluation columns
+if 'Retrieval QIDs' not in eval_data:
+    eval_data['Retrieval QIDs'] = None
+if 'Retrieval Score' not in eval_data:
+    eval_data['Retrieval Score'] = None
+
+# Get rows that are not already evaluated
+def is_empty(x):
+    return (x is None) or (len(x) == 0)
+missing_qids = eval_data['Retrieval QIDs'].apply(is_empty)
+missing_scores = eval_data['Retrieval Score'].apply(is_empty)
+row_to_process = missing_qids | missing_scores
+row_to_process_len = (~row_to_process).sum()
+
+
+def run_evaluation_process():
+    """Iterate over the queries in the evaluation dataset and retrieve the QIDs and Similarity Scores from the Vector Database.
+    """
     print(f"Running: {OUTPUT_FILENAME}")
 
     with tqdm(total=len(eval_data), disable=False) as progressbar:
-        if 'Retrieval QIDs' not in eval_data:
-            eval_data['Retrieval QIDs'] = None
-        if 'Retrieval Score' not in eval_data:
-            eval_data['Retrieval Score'] = None
+        progressbar.update(row_to_process_len)
 
-        # TODO: Refactor this row_to_process to avoid nested .apply
-        # Find rows that haven't been processed
-        row_to_process = eval_data['Retrieval QIDs'].apply(
-            lambda x: (x is None) or (len(x) == 0)
-            ) | eval_data['Retrieval Score'].apply(
-                lambda x: (x is None) or (len(x) == 0)
-            )
-
-        pkl_output_path = f"../data/Evaluation Data/{OUTPUT_FILENAME}.pkl"
-        progressbar.update((~row_to_process).sum())
         for i in range(0, row_to_process.sum(), BATCH_SIZE):
             batch_idx = eval_data[row_to_process].iloc[i:i+BATCH_SIZE].index
             batch = eval_data.loc[batch_idx]
@@ -134,7 +135,7 @@ if __name__ == "__main__":
                 batch_results[1]
             ).values
 
-            # TODO: Create progress bar update funciton
+            # TODO: Create progress bar update function
             # tqdm is not wokring in docker compose. This is the alternative
             progressbar.update(len(batch))
             tqdm.write(
@@ -145,9 +146,12 @@ if __name__ == "__main__":
                 )
             )
             if progressbar.n % 100 == 0:
-                # BUG: Why is the pkl output file being written twice at end
-                with open(pkl_output_path, "wb") as pkl_file:
+                with open(OUTPUT_FILE_PATH, "wb") as pkl_file:
                     pickle.dump(eval_data, pkl_file)
 
-        # BUG: Why is the pkl output file being written twice at end
-        pickle.dump(eval_data, open(pkl_output_path, "wb"))
+        with open(OUTPUT_FILE_PATH, "wb") as pkl_file:
+            pickle.dump(eval_data, pkl_file)
+
+
+if __name__ == "__main__":
+    run_evaluation_process()

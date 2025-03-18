@@ -3,7 +3,7 @@ import os
 import time
 
 from src.wikidataDumpReader import WikidataDumpReader
-from src.wikidataLangDB import WikidataLang
+from src.wikidataLangDB import create_wikidatalang_db
 
 FILEPATH = os.getenv("FILEPATH", '../data/Wikidata/latest-all.json.bz2')
 PUSH_SIZE = int(os.getenv("PUSH_SIZE", 2000))
@@ -12,15 +12,17 @@ NUM_PROCESSES = int(os.getenv("NUM_PROCESSES", 8))
 SKIPLINES = int(os.getenv("SKIPLINES", 0))
 LANGUAGE = os.getenv("LANGUAGE", 'en')
 
+DB_PATH = os.getenv("DB_PATH", f'sqlite_{LANGUAGE}wiki.db')
+
+WikidataLang = create_wikidatalang_db(db_filname=DB_PATH)
 
 def save_entities_to_sqlite(item, data_batch, sqliteDBlock):
-    """_summary_
-    # TODO Add a docstring
+    """Processes items from the dump file and batch stores them in a SQLite database.
 
     Args:
-        item (_type_): _description_
-        data_batch (_type_): _description_
-        sqliteDBlock (_type_): _description_
+        item (dict): An item as JSON extracted from the dump file
+        data_batch (list): a list shared across multiple processes, that stores the processed items.
+        sqliteDBlock (Lock): a multiprocessing lock that is used when the a batch is ready to be pushed to the SQLite database.
     """
     if item is not None:
         # Check if the item is a valid entity

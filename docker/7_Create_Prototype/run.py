@@ -19,9 +19,12 @@ EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", 100))
 QUEUE_SIZE = 2 * EMBED_BATCH_SIZE * NUM_PROCESSES  # enough to not run out
 QUEUE_SIZE = int(os.getenv("QUEUE_SIZE", QUEUE_SIZE))
 
-DB_API_KEY_FILENAME = os.getenv("DB_API_KEY", "datastax_wikidata.json")
+DB_API_KEY_FILENAME = os.getenv("DB_API_KEY",
+                                "datastax_wikidata.json")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME")
 
+CHUNK_SIZES_PATH = os.getenv("CHUNK_SIZES_PATH",
+                             "Wikidata/wikidata_chunk_sizes_2024-09-18.json")
 CHUNK_NUM = os.getenv("CHUNK_NUM")
 
 assert CHUNK_NUM is not None, (
@@ -39,16 +42,7 @@ if not COLLECTION_NAME:
 if not TEXTIFIER_LANGUAGE:
     TEXTIFIER_LANGUAGE = LANGUAGE
 
-FILEPATH = f"../data/Wikidata/chunks/chunk_{CHUNK_NUM}.json.gz"
-
-# wikidata_chunk_sizes_fname = "../data/Wikidata/chunk_sizes.json"
-# TODO: Add location as env var
-# TODO: Sync data format from DATADUMP to chunk_sizes.json
-# TODO: Retrieve info from Hugging Face instead of storing it
-# TODO: Set this up as a separate script and run after __name__
-wikidata_chunksizes_path = os.path.join("wikidata_chunk_sizes_2024-09-18.json")
-
-with open(wikidata_chunksizes_path) as json_in:
+with open(f"../data/{CHUNK_SIZES_PATH}") as json_in:
     chunk_sizes = json.load(json_in)
 
 total_entities = chunk_sizes[f"chunk_{CHUNK_NUM}"]
@@ -85,8 +79,10 @@ def process_items(queue, progress_bar):
 
     while True:
         item = queue.get()
+        progress_bar.value += 1
         if item is None:
-            break  # Exit condition for worker processes
+            # Exit condition for worker processes
+            break
 
         item_id = item['id']
 
@@ -94,6 +90,9 @@ def process_items(queue, progress_bar):
             item_id,
             json.loads(item['labels'])
         )
+        if item_label is None:
+            # Skip item if label is not available in the language
+            continue
 
         item_description = textifier.get_description(
             item_id,
@@ -103,46 +102,40 @@ def process_items(queue, progress_bar):
             json.loads(item['aliases'])
         )
 
-        if item_label is not None:
-            # TODO: Verify: If label does not exist, then skip item
-            entity_obj = SimpleNamespace()
-            entity_obj.id = item_id
-            entity_obj.label = item_label
-            entity_obj.description = item_description
-            entity_obj.aliases = item_aliases
-            entity_obj.claims = json.loads(item['claims'])
+        entity_obj = SimpleNamespace()
+        entity_obj.id = item_id
+        entity_obj.label = item_label
+        entity_obj.description = item_description
+        entity_obj.aliases = item_aliases
+        entity_obj.claims = json.loads(item['claims'])
 
-            chunks = textifier.chunk_text(
-                entity_obj,
-                graph_store.tokenizer,
-                max_length=graph_store.max_token_size
+        chunks = textifier.chunk_text(
+            entity_obj,
+            graph_store.tokenizer,
+            max_length=graph_store.max_token_size
+        )
+
+        for chunk_i, chunk in enumerate(chunks):
+            md5_hash = hashlib.md5(chunk.encode('utf-8')).hexdigest()
+            metadata = {
+                "MD5": md5_hash,
+                "Label": item_label,
+                "Description": item_description,
+                "Aliases": item_aliases,
+                "Date": datetime.now().isoformat(),
+                "QID": item_id,
+                "ChunkID": chunk_i + 1,
+                "Language": LANGUAGE,
+                "IsItem": ('Q' in item_id),
+                "IsProperty": ('P' in item_id),
+                "DumpDate": DUMPDATE
+            }
+
+            graph_store.add_document(
+                id=f"{item_id}_{LANGUAGE}_{chunk_i+1}",
+                text=chunk,
+                metadata=metadata
             )
-
-            for chunk_i, chunk in enumerate(chunks):
-                md5_hash = hashlib.md5(chunk.encode('utf-8')).hexdigest()
-                metadata = {
-                    "MD5": md5_hash,
-                    "Label": item_label,
-                    "Description": item_description,
-                    "Aliases": item_aliases,
-                    "Date": datetime.now().isoformat(),
-                    "QID": item_id,
-                    "ChunkID": chunk_i + 1,
-                    "Language": LANGUAGE,
-                    "IsItem": ('Q' in item_id),
-                    "IsProperty": ('P' in item_id),
-                    "DumpDate": DUMPDATE
-                }
-
-                graph_store.add_document(
-                    id=f"{item_id}_{LANGUAGE}_{chunk_i+1}",
-
-                    text=chunk,
-                    metadata=metadata
-                )
-
-        progress_bar.value += 1
-
 
     graph_store.push_all()
 
@@ -161,16 +154,12 @@ if __name__ == "__main__":
         for item in dataset:
             queue.put(item)
             pbar.update(progress_bar.value - pbar.n)
-            # pbar.n = progress_bar.value
-            # pbar.refresh()
 
         for _ in range(NUM_PROCESSES):
             queue.put(None)
 
         while any(p.is_alive() for p in processes):
             pbar.update(progress_bar.value - pbar.n)
-            # pbar.n = progress_bar.value
-            # pbar.refresh()
             time.sleep(1)
 
         for p in processes:

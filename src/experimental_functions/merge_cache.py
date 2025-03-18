@@ -6,9 +6,10 @@ from tqdm import tqdm
 
 # Define database file pattern
 db_files = glob.glob("../data/Wikidata/sqlite_cacheembeddings_*.db")
+db_files = ["../data/Wikidata/sqlite_cacheembeddings_4.db"]
 
 # Define the target merged database
-merged_db = "../data/Wikidata/sqlite_cacheembeddings_merged.db"
+merged_db = "../data/Wikidata/sqlite_cacheembeddings.db"
 TABLE_NAME = "wikidata_prototype"
 
 # Batch size for processing

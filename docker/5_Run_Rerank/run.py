@@ -3,11 +3,7 @@ import pandas as pd
 import os
 import pickle
 
-# BUG: Reviwer assumed wikidataDB was converted to wikidataLangDB
-# Bug: Reviwer assumed wikidataDB.WikidataEntity was converted
-#   to wikidataLangDB.WikidataLang
-# from src.wikidataDB import WikidataEntity
-from src.wikidataLangDB import WikidataLang
+from src.wikidataLangDB import create_wikidatalang_db
 from src.wikidataEmbed import WikidataTextifier
 from src.JinaAI import JinaAIReranker
 
@@ -27,11 +23,10 @@ pkl_fpath = f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl"
 with open(pkl_fpath, "rb") as pkl_file:
     eval_data = pickle.load(pkl_file)
 
+WikidataLang = create_wikidatalang_db(db_filname=f"sqlite_{LANGUAGE}wiki.db")
 
 # Rerank the QIDs
 def rerank_qids(query, qids, reranker, textifier):
-    # Bug: Reviwer assumed WikidataEntity was converted to WikidataLang
-    # entities = [WikidataEntity.get_entity(qid) for qid in qids]
     entities = [WikidataLang.get_entity(qid) for qid in qids]
     texts = [textifier.entity_to_text(entity) for entity in entities]
     scores = reranker.rank(query, texts)

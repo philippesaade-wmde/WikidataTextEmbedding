@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy the requirements file into the container
-COPY ./docker/3_Add_Wikidata_to_AstraDB/requirements.txt requirements.txt
+COPY ./docker/3_Add_Wikidata_to_DB/requirements.txt requirements.txt
 
 # Install the dependencies
 RUN pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cu124
@@ -21,7 +21,7 @@ RUN pip install flash-attn
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code into the container
-COPY ./docker/3_Add_Wikidata_to_AstraDB /app
+COPY ./docker/3_Add_Wikidata_to_DB /app
 COPY ./src /src
 COPY ./API_tokens /API_tokens
 

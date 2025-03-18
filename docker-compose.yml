@@ -23,10 +23,10 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
 
-  add_wikidata_to_astra:
+  add_wikidata_to_db:
     build:
       context: .
-      dockerfile: ./docker/3_Add_Wikidata_to_AstraDB/Dockerfile
+      dockerfile: ./docker/3_Add_Wikidata_to_DB/Dockerfile
     volumes:
       - ./data:/data
       - ~/.cache/huggingface:/root/.cache/huggingface

@@ -1,9 +1,6 @@
 # # How to read and process the Wikdata dump file.
 
 import sqlite3
-import sys
-sys.path.append('../src')
-
 from wikidataDumpReader import WikidataDumpReader
 from multiprocessing import Manager, Queue, Process, cpu_count
 
@@ -380,7 +377,7 @@ if __name__ == '__main__':
     from wikidataDumpReader import WikidataDumpReader
     from multiprocessing import Manager, cpu_count, Queue, Process
 
-    from Get_Wikidata_Stats import calculate_stats, setup_database, db_writer
+    from src.experimental_functions.Get_Wikidata_Stats import calculate_stats, setup_database, db_writer
 
     # Set up database
     DB_PATH = 'wikidata_stats.db'
