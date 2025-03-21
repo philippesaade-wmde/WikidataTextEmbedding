@@ -3,30 +3,23 @@ import glob
 import os
 import base64
 from tqdm import tqdm
+import json
+import numpy as np
 
 # Define database file pattern
-db_files = glob.glob("../data/Wikidata/sqlite_cacheembeddings_*.db")
-db_files = ["../data/Wikidata/sqlite_cacheembeddings_4.db"]
+db_files = glob.glob("../../data/Wikidata/sqlite_cacheembeddings_*.db")
+db_files = ["../../data/Wikidata/sqlite_cacheembeddings_1.db", "../../data/Wikidata/sqlite_cacheembeddings_2.db", "../../data/Wikidata/sqlite_cacheembeddings_3.db", "../../data/Wikidata/sqlite_cacheembeddings_4.db"]
 
 # Define the target merged database
-merged_db = "../data/Wikidata/sqlite_cacheembeddings.db"
+merged_db = "../../data/Wikidata/wikidata_cache.db"
 TABLE_NAME = "wikidata_prototype"
 
 # Batch size for processing
-BATCH_SIZE = 1000  # Adjust based on performance needs
+BATCH_SIZE = 5000  # Adjust based on performance needs
 
 # Create the merged database connection
 conn_merged = sqlite3.connect(merged_db)
 cursor_merged = conn_merged.cursor()
-
-# Create table in the merged database if it doesn't exist
-cursor_merged.execute(f"""
-CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-    id TEXT PRIMARY KEY,
-    embedding TEXT
-);
-""")
-conn_merged.commit()
 
 # Helper function to check if a string is a valid Base64 encoding
 def is_valid_base64(s):
@@ -36,6 +29,13 @@ def is_valid_base64(s):
         base64.b64decode(s, validate=True)
         return True
     except Exception:
+        return False
+
+def is_valid_json(s):
+    try:
+        json.loads(s)
+        return True
+    except:
         return False
 
 # Loop through all source databases
@@ -63,12 +63,21 @@ for db_file in db_files:
             # Prepare batch for insertion
             batch_data = []
             for id_, embedding in records:
-                if embedding and embedding.strip() and is_valid_base64(embedding):
-                    cursor_merged.execute(f"SELECT embedding FROM {TABLE_NAME} WHERE id = ?", (id_,))
-                    existing = cursor_merged.fetchone()
+                if embedding and embedding.strip():
+                    if is_valid_json(embedding):
+                        # Convert JSON string to list of floats
+                        embedding = json.loads(embedding)
 
-                    if existing is None or not is_valid_base64(existing[0]):
-                        batch_data.append((id_, embedding, embedding))  # Prepare for bulk insert
+                        # Convert list of floats to Base64-encoded binary
+                        binary_data = np.array(embedding, dtype=np.float32).tobytes()
+                        embedding = base64.b64encode(binary_data).decode('utf-8')
+
+                    if is_valid_base64(embedding):
+                        cursor_merged.execute(f"SELECT embedding FROM {TABLE_NAME} WHERE id = ?", (id_,))
+                        existing = cursor_merged.fetchone()
+
+                        if (existing is None) or (existing[0].strip() == '') or not is_valid_base64(existing[0]):
+                            batch_data.append((id_, embedding, embedding))  # Prepare for bulk insert
 
             # Perform batch insert/update
             if batch_data:
