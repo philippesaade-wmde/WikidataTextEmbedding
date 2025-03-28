@@ -10,7 +10,7 @@ SQLite database setup for storing Wikidata labels & descriptions
 in all languages.
 """
 
-SQLITEDB_PATH = '../data/Wikidata/sqlite_wikidata_items.db'
+SQLITEDB_PATH = '../data/Wikidata/sqlite_wikidata_entities.db'
 engine = create_engine(f'sqlite:///{SQLITEDB_PATH}',
     pool_size=5,  # Limit the number of open connections
     max_overflow=10,  # Allow extra connections beyond pool_size
@@ -35,10 +35,10 @@ class JSONType(TypeDecorator):
             return json.loads(value)
         return None
 
-class WikidataItem(Base):
+class WikidataEntity(Base):
     """ Represents a Wikidata entity's labels in multiple languages."""
 
-    __tablename__ = 'item'
+    __tablename__ = 'entity'
 
     # TODO: convert ID to Integer and store existin IDs as qpid
     """
@@ -49,6 +49,9 @@ class WikidataItem(Base):
     labels = Column(JSONType)
     descriptions = Column(JSONType)
     in_wikipedia = Column(Boolean, default=False)
+    is_property = Column(Boolean, default=False)
+    is_item = Column(Boolean, default=True)
+    property_filter = Column(String, default='full') # values: 'full', 'remove', 'has'
 
     @staticmethod
     def add_bulk_items(data):
@@ -71,8 +74,8 @@ class WikidataItem(Base):
 
                 insert_stmt = text(
                     """
-                    INSERT INTO item (id, labels, descriptions, in_wikipedia)
-                    VALUES (:id, :labels, :descriptions, :in_wikipedia)
+                    INSERT INTO entity (id, labels, descriptions, in_wikipedia, is_property, is_item)
+                    VALUES (:id, :labels, :descriptions, :in_wikipedia, :is_property, :is_item)
                     ON CONFLICT(id) DO NOTHING
                     """
                 )
@@ -103,11 +106,13 @@ class WikidataItem(Base):
         worked = False
         with Session() as session:
             try:
-                new_entry = WikidataItem(
+                new_entry = WikidataEntity(
                     id=id,
                     labels=labels,
                     descriptions=descriptions,
-                    in_wikipedia=in_wikipedia
+                    in_wikipedia=in_wikipedia,
+                    is_property=('P' in id),
+                    is_item=('Q' in id),
                 )
                 session.add(new_entry)
                 session.commit()
@@ -130,7 +135,7 @@ class WikidataItem(Base):
         - dict: The labels dictionary if found, otherwise an empty dict.
         """
         with Session() as session:
-            item = session.query(WikidataItem).filter_by(id=id).first()
+            item = session.query(WikidataEntity).filter_by(id=id).first()
             if item is not None:
                 return item.labels
             return {}
@@ -147,7 +152,7 @@ class WikidataItem(Base):
         - dict: The labels dictionary if found, otherwise an empty dict.
         """
         with Session() as session:
-            item = session.query(WikidataItem).filter_by(id=id).first()
+            item = session.query(WikidataEntity).filter_by(id=id).first()
             if item is not None:
                 return item.descriptions
             return {}
@@ -164,7 +169,7 @@ class WikidataItem(Base):
         - dict: The labels dictionary if found, otherwise an empty dict.
         """
         with Session() as session:
-            item = session.query(WikidataItem).filter_by(id=id).first()
+            item = session.query(WikidataEntity).filter_by(id=id).first()
             if item is not None:
                 return item
             return {}
@@ -206,8 +211,8 @@ class WikidataItem(Base):
         """
         with Session() as session:
             rows = (
-                session.query(WikidataItem.id, WikidataItem.labels)
-                    .filter(WikidataItem.id.in_(id_list))
+                session.query(WikidataEntity.id, WikidataEntity.labels)
+                    .filter(WikidataEntity.id.in_(id_list))
                     .all()
             )
 
@@ -226,9 +231,9 @@ class WikidataItem(Base):
         - dict or list: The cleaned data structure with specified keys removed.
         """
         if isinstance(data, dict):
-            data = {key: WikidataItem._remove_keys(value, keys_to_remove) for key, value in data.items() if key not in keys_to_remove}
+            data = {key: WikidataEntity._remove_keys(value, keys_to_remove) for key, value in data.items() if key not in keys_to_remove}
         elif isinstance(data, list):
-            data = [WikidataItem._remove_keys(item, keys_to_remove) for item in data]
+            data = [WikidataEntity._remove_keys(item, keys_to_remove) for item in data]
         return data
 
     @staticmethod
@@ -245,11 +250,11 @@ class WikidataItem(Base):
         if isinstance(data, dict):
             # If there's only one key and it's not a property or QID, recurse into it.
             if (len(data.keys()) == 1) and not re.match(r"^[PQ]\d+$", list(data.keys())[0]):
-                data = WikidataItem._clean_datavalue(data[list(data.keys())[0]])
+                data = WikidataEntity._clean_datavalue(data[list(data.keys())[0]])
             else:
-                data = {key: WikidataItem._clean_datavalue(value) for key, value in data.items()}
+                data = {key: WikidataEntity._clean_datavalue(value) for key, value in data.items()}
         elif isinstance(data, list):
-            data = [WikidataItem._clean_datavalue(item) for item in data]
+            data = [WikidataEntity._clean_datavalue(item) for item in data]
         return data
 
     @staticmethod
@@ -282,12 +287,12 @@ class WikidataItem(Base):
                 ids.add(data['datavalue'])
 
             for value in data.values():
-                sub_ids = WikidataItem._gather_labels_ids(value)
+                sub_ids = WikidataEntity._gather_labels_ids(value)
                 ids.update(sub_ids)
 
         elif isinstance(data, list):
             for item in data:
-                sub_ids = WikidataItem._gather_labels_ids(item)
+                sub_ids = WikidataEntity._gather_labels_ids(item)
                 ids.update(sub_ids)
 
         return list(ids)
@@ -310,7 +315,7 @@ class WikidataItem(Base):
                 if data['property'] in labels_dict:
                     labels = labels_dict[data['property']]
                 else:
-                    labels = WikidataItem.get_labels(data['property'])
+                    labels = WikidataEntity.get_labels(data['property'])
 
                 data = {
                     **data,
@@ -322,7 +327,7 @@ class WikidataItem(Base):
                 if id in labels_dict:
                     labels = labels_dict[id]
                 else:
-                    labels = WikidataItem.get_labels(id)
+                    labels = WikidataEntity.get_labels(id)
 
                 data = {
                     **data,
@@ -333,17 +338,17 @@ class WikidataItem(Base):
                 if data['datavalue'] in labels_dict:
                     labels = labels_dict[data['datavalue']]
                 else:
-                    labels = WikidataItem.get_labels(data['datavalue'])
+                    labels = WikidataEntity.get_labels(data['datavalue'])
 
                 data['datavalue'] = {
                     'id': data['datavalue'],
                     'labels': labels
                 }
 
-            data = {key: WikidataItem._add_labels_to_claims(value, labels_dict=labels_dict) for key, value in data.items()}
+            data = {key: WikidataEntity._add_labels_to_claims(value, labels_dict=labels_dict) for key, value in data.items()}
 
         elif isinstance(data, list):
-            data = [WikidataItem._add_labels_to_claims(item, labels_dict=labels_dict) for item in data]
+            data = [WikidataEntity._add_labels_to_claims(item, labels_dict=labels_dict) for item in data]
 
         return data
 
@@ -359,14 +364,14 @@ class WikidataItem(Base):
         Returns:
         - dict or list: The updated claims with labels inserted.
         """
-        label_ids = WikidataItem._gather_labels_ids(claims)
+        label_ids = WikidataEntity._gather_labels_ids(claims)
 
         labels_dict = {}
         for i in range(0, len(label_ids), query_batch):
-            temp_dict = WikidataItem.get_labels_list(label_ids[i:i+query_batch])
+            temp_dict = WikidataEntity.get_labels_list(label_ids[i:i+query_batch])
             labels_dict = {**labels_dict, **temp_dict}
 
-        claims = WikidataItem._add_labels_to_claims(claims, labels_dict=labels_dict)
+        claims = WikidataEntity._add_labels_to_claims(claims, labels_dict=labels_dict)
         return claims
 
     @staticmethod
@@ -380,17 +385,17 @@ class WikidataItem(Base):
         Returns:
         - dict: The cleaned entity with label data integrated into its claims.
         """
-        clean_claims = WikidataItem._remove_keys(entity.get('claims', {}), ['hash', 'snaktype', 'type', 'entity-type', 'numeric-id', 'qualifiers-order', 'snaks-order'])
-        clean_claims = WikidataItem._clean_datavalue(clean_claims)
-        clean_claims = WikidataItem._remove_keys(clean_claims, ['id'])
-        clean_claims = WikidataItem.add_labels_batched(clean_claims)
+        clean_claims = WikidataEntity._remove_keys(entity.get('claims', {}), ['hash', 'snaktype', 'type', 'entity-type', 'numeric-id', 'qualifiers-order', 'snaks-order'])
+        clean_claims = WikidataEntity._clean_datavalue(clean_claims)
+        clean_claims = WikidataEntity._remove_keys(clean_claims, ['id'])
+        clean_claims = WikidataEntity.add_labels_batched(clean_claims)
 
-        sitelinks = WikidataItem._remove_keys(entity.get('sitelinks', {}), ['badges'])
+        sitelinks = WikidataEntity._remove_keys(entity.get('sitelinks', {}), ['badges'])
 
         return {
             'id': entity['id'],
-            'labels': WikidataItem.clean_label_description(entity['labels']),
-            'descriptions': WikidataItem.clean_label_description(entity['descriptions']),
+            'labels': WikidataEntity.clean_label_description(entity['labels']),
+            'descriptions': WikidataEntity.clean_label_description(entity['descriptions']),
             'aliases': entity['aliases'],
             'sitelinks': sitelinks,
             'claims': clean_claims

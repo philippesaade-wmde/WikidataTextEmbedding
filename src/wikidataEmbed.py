@@ -5,7 +5,7 @@ import re
 import importlib
 
 from datetime import date, datetime
-from src.wikidataItemDB import WikidataItem
+from src.wikidataEntityDB import WikidataEntity
 
 class WikidataTextifier:
     """_summary_
@@ -46,7 +46,7 @@ class WikidataTextifier:
         if (labels is None) or (len(labels) == 0):
             # If the labels are not provided, fetch them from the Wikidata SQLDB
             # TODO: Fetch from the Wikidata API if not found in the SQLDB
-            labels = WikidataItem.get_labels(id)
+            labels = WikidataEntity.get_labels(id)
 
         if isinstance(labels, str):
             # If the labels are a string, return them as is
@@ -78,7 +78,7 @@ class WikidataTextifier:
         if (descriptions is None) or (len(descriptions) == 0):
             # If the descriptions are not provided, fetch them from the Wikidata SQLDB
             # TODO: Fetch from the Wikidata API if not found in the SQLDB
-            descriptions = WikidataItem.get_descriptions(id)
+            descriptions = WikidataEntity.get_descriptions(id)
 
         if isinstance(descriptions, str):
             return descriptions

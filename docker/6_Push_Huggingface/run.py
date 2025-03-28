@@ -5,7 +5,7 @@ from multiprocessing import Process, Value, Queue
 
 
 from src.wikidataDumpReader import WikidataDumpReader
-from src.wikidataItemDB import WikidataItem
+from src.wikidataEntityDB import WikidataEntity
 
 from datasets import Dataset, load_dataset_builder
 
@@ -23,8 +23,8 @@ with open(api_key_fpath) as f_in:
 
 def save_to_queue(item, data_queue):
     """Processes and puts cleaned item into the multiprocessing queue."""
-    if (item is not None) and (WikidataItem.is_in_wikipedia(item)):
-        claims = WikidataItem.add_labels_batched(
+    if (item is not None) and (WikidataEntity.is_in_wikipedia(item)):
+        claims = WikidataEntity.add_labels_batched(
             item['claims'],
             query_batch=100
         )

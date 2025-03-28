@@ -1,6 +1,4 @@
 import json
-import os
-import hashlib
 import time
 
 from datasets import load_dataset

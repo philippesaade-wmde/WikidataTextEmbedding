@@ -4,7 +4,7 @@ import time
 import json
 
 from src.wikidataDumpReader import WikidataDumpReader
-from src.wikidataItemDB import WikidataItem
+from src.wikidataEntityDB import WikidataEntity
 
 FILEPATH = os.getenv("FILEPATH", '../data/Wikidata/latest-all.json.bz2')
 PUSH_SIZE = int(os.getenv("PUSH_SIZE", 20000))
@@ -16,23 +16,25 @@ LANGUAGE = os.getenv("LANGUAGE", 'en')
 
 def save_items_to_sqlite(item, data_batch, sqlitDBlock):
     if (item is not None):
-        labels = WikidataItem.clean_label_description(item['labels'])
-        descriptions = WikidataItem.clean_label_description(
+        labels = WikidataEntity.clean_label_description(item['labels'])
+        descriptions = WikidataEntity.clean_label_description(
             item['descriptions']
         )
         labels = json.dumps(labels, separators=(',', ':'))
         descriptions = json.dumps(descriptions, separators=(',', ':'))
-        in_wikipedia = WikidataItem.is_in_wikipedia(item)
+        in_wikipedia = WikidataEntity.is_in_wikipedia(item)
         data_batch.append({
             'id': item['id'],
             'labels': labels,
             'descriptions': descriptions,
             'in_wikipedia': in_wikipedia,
+            'is_property': ('P' in item['id']),
+            'is_item': ('Q' in item['id']),
         })
 
         with sqlitDBlock:
             if len(data_batch) > PUSH_SIZE:
-                worked = WikidataItem.add_bulk_items(list(
+                worked = WikidataEntity.add_bulk_items(list(
                     data_batch[:PUSH_SIZE]
                 ))
                 if worked:
@@ -62,7 +64,7 @@ if __name__ == "__main__":
     )
 
     while len(data_batch) > 0:
-        worked = WikidataItem.add_bulk_items(list(data_batch))
+        worked = WikidataEntity.add_bulk_items(list(data_batch))
         if worked:
             del data_batch[:PUSH_SIZE]
         else:
