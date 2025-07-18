@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator, Boolean
 import json
 import re
+import traceback
 
 """
 SQLite database setup for storing Wikidata labels & descriptions
@@ -35,29 +36,44 @@ class JSONType(TypeDecorator):
             return json.loads(value)
         return None
 
-class WikidataEntity(Base):
-    """ Represents a Wikidata entity's labels in multiple languages."""
-
-    __tablename__ = 'entity'
-
-    # TODO: convert ID to Integer and store existin IDs as qpid
-    """
-    id = Column(Integer, primary_key=True)
-    qpid = Column(String, unique=True, index=True)
-    """
+class WikidataItem(Base):
+    __tablename__ = 'item'
     id = Column(Text, primary_key=True)
     labels = Column(JSONType)
     descriptions = Column(JSONType)
     in_wikipedia = Column(Boolean, default=False)
-    is_property = Column(Boolean, default=False)
-    is_item = Column(Boolean, default=True)
+
+class WikidataProperty(Base):
+    __tablename__ = 'property'
+    id = Column(Text, primary_key=True)
+    labels = Column(JSONType)
+    descriptions = Column(JSONType)
+    in_wikipedia = Column(Boolean, default=False)
+
     property_filter = Column(String, default='full') # values: 'full', 'remove', 'has'
+    property_sort = Column(Integer, default=90000)
+
+
+class WikidataEntity:
+    """ Represents a Wikidata entity's labels in multiple languages."""
+
+    @staticmethod
+    def _get_class(id):
+        """
+        Returns the appropriate class based on the entity ID.
+
+        Parameters:
+        - id (str): The unique identifier of the entity.
+
+        Returns:
+        - WikidataItem or WikidataProperty: The class corresponding to the entity type.
+        """
+        return WikidataProperty if id.startswith('P') else WikidataItem
 
     @staticmethod
     def add_bulk_items(data):
         """
-        Insert multiple label records in bulk. If a record with the same ID exists,
-        it is ignored (no update is performed).
+        Insert multiple label records in bulk. If a record with the same ID exists, it is ignored (no update is performed).
 
         Parameters:
         - data (list[dict]): A list of dictionaries, each containing 'id', 'labels', 'descriptions', and 'in_wikipedia' keys.
@@ -65,68 +81,66 @@ class WikidataEntity(Base):
         Returns:
         - bool: True if the operation was successful, False otherwise.
         """
-        worked = False  # Assume the operation failed
         with Session() as session:
             try:
-                # Use a text statement to operate bulk insert
-                # SQLAlchemy's ORM is unable to handle bulk inserts
-                # with ON CONFLICT.
+                items = [d for d in data if d['id'].startswith('Q')]
+                properties = [d for d in data if d['id'].startswith('P')]
 
-                insert_stmt = text(
-                    """
-                    INSERT INTO entity (id, labels, descriptions, in_wikipedia, is_property, is_item)
-                    VALUES (:id, :labels, :descriptions, :in_wikipedia, :is_property, :is_item)
-                    ON CONFLICT(id) DO NOTHING
-                    """
-                )
+                if items:
+                    session.execute(text('''
+                        INSERT INTO wikidata_item (id, labels, descriptions, in_wikipedia)
+                        VALUES (:id, :labels, :descriptions, :in_wikipedia)
+                        ON CONFLICT(id) DO NOTHING
+                    '''), items)
 
-                # Execute the insert statement for each data entry.
-                session.execute(insert_stmt, data)
+                if properties:
+                    session.execute(text('''
+                        INSERT INTO wikidata_property (id, labels, descriptions, in_wikipedia)
+                        VALUES (:id, :labels, :descriptions, :in_wikipedia)
+                        ON CONFLICT(id) DO NOTHING
+                    '''), properties)
+
                 session.commit()
-                session.flush()
-                worked = True  # Mark the operation as successful
+                return True
             except Exception as e:
                 session.rollback()
-                print(e)
-
-        return worked  # Return the operation status
+                traceback.print_exc()
+                return False
 
     @staticmethod
-    def add_labels(id, labels, descriptions, in_wikipedia):
+    def add_entity(id, labels, descriptions, in_wikipedia):
         """
-        Insert a single label record into the database.
+        Insert a labels and descriptions into the database.
 
         Parameters:
         - id (str): The unique identifier for the entity.
         - labels (dict): A dictionary of labels (e.g. { "en": "Label in English", "fr": "Label in French", ... }).
+        - descriptions (dict): A dictionary of descriptions (e.g. { "en": "Description in English", "fr": "Description in French", ... }).
 
         Returns:
         - bool: True if the operation was successful, False otherwise.
         """
-        worked = False
+        cls = WikidataEntity._get_class(id)
         with Session() as session:
             try:
-                new_entry = WikidataEntity(
+                new_entry = cls(
                     id=id,
                     labels=labels,
                     descriptions=descriptions,
-                    in_wikipedia=in_wikipedia,
-                    is_property=('P' in id),
-                    is_item=('Q' in id),
+                    in_wikipedia=in_wikipedia
                 )
                 session.add(new_entry)
                 session.commit()
-                session.flush()
-                worked = True
+                return True
             except Exception as e:
                 session.rollback()
                 print(f"Error: {e}")
-        return worked
+                return False
 
     @staticmethod
     def get_labels(id):
         """
-        Retrieve labels for a given entity by its ID.
+        Retrieve labels and descriptions for a given entity by its ID.
 
         Parameters:
         - id (str): The unique identifier of the entity.
@@ -134,8 +148,9 @@ class WikidataEntity(Base):
         Returns:
         - dict: The labels dictionary if found, otherwise an empty dict.
         """
+        cls = WikidataEntity._get_class(id)
         with Session() as session:
-            item = session.query(WikidataEntity).filter_by(id=id).first()
+            item = session.query(cls).filter_by(id=id).first()
             if item is not None:
                 return item.labels
             return {}
@@ -151,8 +166,9 @@ class WikidataEntity(Base):
         Returns:
         - dict: The labels dictionary if found, otherwise an empty dict.
         """
+        cls = WikidataEntity._get_class(id)
         with Session() as session:
-            item = session.query(WikidataEntity).filter_by(id=id).first()
+            item = session.query(cls).filter_by(id=id).first()
             if item is not None:
                 return item.descriptions
             return {}
@@ -168,8 +184,9 @@ class WikidataEntity(Base):
         Returns:
         - dict: The labels dictionary if found, otherwise an empty dict.
         """
+        cls = WikidataEntity._get_class(id)
         with Session() as session:
-            item = session.query(WikidataEntity).filter_by(id=id).first()
+            item = session.query(cls).filter_by(id=id).first()
             if item is not None:
                 return item
             return {}
@@ -200,23 +217,20 @@ class WikidataEntity(Base):
 
     @staticmethod
     def get_labels_list(id_list):
-        """
-        Retrieve labels for multiple entities at once.
+        items_ids = [id for id in id_list if id.startswith('Q')]
+        props_ids = [id for id in id_list if id.startswith('P')]
+        result = {}
 
-        Parameters:
-        - id_list (list[str]): A list of entity IDs.
-
-        Returns:
-        - dict: A mapping of {entity_id: labels_dict} for each found ID. Missing IDs won't appear.
-        """
         with Session() as session:
-            rows = (
-                session.query(WikidataEntity.id, WikidataEntity.labels)
-                    .filter(WikidataEntity.id.in_(id_list))
-                    .all()
-            )
+            if items_ids:
+                rows = session.query(WikidataItem.id, WikidataItem.labels).filter(WikidataItem.id.in_(items_ids)).all()
+                result.update({id: labels for id, labels in rows})
 
-        return {row_id: row_labels for row_id, row_labels in rows if row_labels is not None}
+            if props_ids:
+                rows = session.query(WikidataProperty.id, WikidataProperty.labels).filter(WikidataProperty.id.in_(props_ids)).all()
+                result.update({id: labels for id, labels in rows})
+
+        return result
 
     @staticmethod
     def _remove_keys(data, keys_to_remove=['hash', 'property', 'numeric-id', 'qualifiers-order']):
@@ -334,7 +348,8 @@ class WikidataEntity(Base):
                     'unit-labels': labels
                 }
 
-            if ('datatype' in data) and ('datavalue' in data) and ((data['datatype'] == 'wikibase-item') or (data['datatype'] == 'wikibase-property')):
+            if ('datatype' in data) and ('datavalue' in data) and \
+                (data['datatype'] in ['wikibase-item', 'wikibase-property']):
                 if data['datavalue'] in labels_dict:
                     labels = labels_dict[data['datavalue']]
                 else:
@@ -394,8 +409,12 @@ class WikidataEntity(Base):
 
         return {
             'id': entity['id'],
-            'labels': WikidataEntity.clean_label_description(entity['labels']),
-            'descriptions': WikidataEntity.clean_label_description(entity['descriptions']),
+            'labels': WikidataEntity.clean_label_description(
+                entity['labels']
+            ),
+            'descriptions': WikidataEntity.clean_label_description(
+                entity['descriptions']
+            ),
             'aliases': entity['aliases'],
             'sitelinks': sitelinks,
             'claims': clean_claims

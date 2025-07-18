@@ -7,8 +7,7 @@ import json
 import numpy as np
 
 # Define database file pattern
-db_files = glob.glob("../../data/Wikidata/sqlite_cacheembeddings_*.db")
-db_files = ["../../data/Wikidata/sqlite_cacheembeddings_1.db", "../../data/Wikidata/sqlite_cacheembeddings_2.db", "../../data/Wikidata/sqlite_cacheembeddings_3.db", "../../data/Wikidata/sqlite_cacheembeddings_4.db"]
+db_files = ["../../data/Wikidata/wikidata_cache_chunk0-30_18-9-2024.db"]
 
 # Define the target merged database
 merged_db = "../../data/Wikidata/wikidata_cache.db"
@@ -51,18 +50,21 @@ for db_file in db_files:
     total_records = cursor_src.fetchone()[0]
 
     # Fetch records in batches
-    offset = 0
+    last_seen_rowid = 0
     with tqdm(total=total_records,
               desc=f"Merging {db_file}", unit="records") as pbar:
         while True:
-            cursor_src.execute(f"SELECT id, embedding FROM {TABLE_NAME} LIMIT {BATCH_SIZE} OFFSET {offset}")
+            cursor_src.execute(
+                f"SELECT id, embedding, ROWID FROM {TABLE_NAME} WHERE ROWID > {last_seen_rowid} ORDER BY ROWID LIMIT {BATCH_SIZE}"
+            )
             records = cursor_src.fetchall()
             if not records:
                 break  # No more records to process
 
             # Prepare batch for insertion
             batch_data = []
-            for id_, embedding in records:
+            for id_, embedding, rowid in records:
+                last_seen_rowid = rowid
                 if embedding and embedding.strip():
                     if is_valid_json(embedding):
                         # Convert JSON string to list of floats
@@ -73,11 +75,7 @@ for db_file in db_files:
                         embedding = base64.b64encode(binary_data).decode('utf-8')
 
                     if is_valid_base64(embedding):
-                        cursor_merged.execute(f"SELECT embedding FROM {TABLE_NAME} WHERE id = ?", (id_,))
-                        existing = cursor_merged.fetchone()
-
-                        if (existing is None) or (existing[0].strip() == '') or not is_valid_base64(existing[0]):
-                            batch_data.append((id_, embedding, embedding))  # Prepare for bulk insert
+                        batch_data.append((id_, embedding, embedding))
 
             # Perform batch insert/update
             if batch_data:
@@ -91,7 +89,6 @@ for db_file in db_files:
                 )
                 conn_merged.commit()
 
-            offset += BATCH_SIZE  # Move to the next batch
             pbar.update(len(records))  # Update tqdm progress bar
 
     conn_src.close()

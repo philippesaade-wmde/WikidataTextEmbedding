@@ -19,6 +19,10 @@ EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", 100))
 QUEUE_SIZE = 2 * EMBED_BATCH_SIZE * NUM_PROCESSES  # enough to not run out
 QUEUE_SIZE = int(os.getenv("QUEUE_SIZE", QUEUE_SIZE))
 
+LANGUAGE = os.getenv("LANGUAGE", 'en')
+TEXTIFIER_LANGUAGE = os.getenv("TEXTIFIER_LANGUAGE", None)
+DUMPDATE = os.getenv("DUMPDATE", '09/18/2024')
+
 DB_API_KEY_FILENAME = os.getenv("DB_API_KEY",
                                 "datastax_wikidata.json")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME")
@@ -31,10 +35,6 @@ assert CHUNK_NUM is not None, (
     "Please provide `CHUNK_NUM` env var at docker run"
 )
 
-LANGUAGE = "en"
-TEXTIFIER_LANGUAGE = "en"
-DUMPDATE = "09/18/2024"
-
 # Load the Database
 if not COLLECTION_NAME:
     raise ValueError("The COLLECTION_NAME environment variable is required")
@@ -42,10 +42,13 @@ if not COLLECTION_NAME:
 if not TEXTIFIER_LANGUAGE:
     TEXTIFIER_LANGUAGE = LANGUAGE
 
-with open(f"../data/{CHUNK_SIZES_PATH}") as json_in:
-    chunk_sizes = json.load(json_in)
+if os.path.exists(f"../data/{CHUNK_SIZES_PATH}"):
+    with open(f"../data/{CHUNK_SIZES_PATH}") as json_in:
+        chunk_sizes = json.load(json_in)
+    total_entities = chunk_sizes[f"chunk_{CHUNK_NUM}"]
+else:
+    total_entities = None
 
-total_entities = chunk_sizes[f"chunk_{CHUNK_NUM}"]
 
 with open(f"../API_tokens/{DB_API_KEY_FILENAME}") as json_in:
     datastax_token = json.load(json_in)
@@ -90,10 +93,6 @@ def process_items(queue, progress_bar):
             item_id,
             json.loads(item['labels'])
         )
-        if item_label is None:
-            # Skip item if label is not available in the language
-            continue
-
         item_description = textifier.get_description(
             item_id,
             json.loads(item['descriptions'])
@@ -101,13 +100,17 @@ def process_items(queue, progress_bar):
         item_aliases = textifier.get_aliases(
             json.loads(item['aliases'])
         )
+        item_claims = json.loads(item['claims'])
+        item_instanceof = textifier.get_instanceof(
+            item_claims
+        )
 
         entity_obj = SimpleNamespace()
         entity_obj.id = item_id
         entity_obj.label = item_label
         entity_obj.description = item_description
         entity_obj.aliases = item_aliases
-        entity_obj.claims = json.loads(item['claims'])
+        entity_obj.claims = item_claims
 
         chunks = textifier.chunk_text(
             entity_obj,
@@ -117,17 +120,19 @@ def process_items(queue, progress_bar):
 
         for chunk_i, chunk in enumerate(chunks):
             md5_hash = hashlib.md5(chunk.encode('utf-8')).hexdigest()
+            ID_name = "QID" if item_id.startswith('Q') else "PID"
             metadata = {
                 "MD5": md5_hash,
                 "Label": item_label,
                 "Description": item_description,
                 "Aliases": item_aliases,
                 "Date": datetime.now().isoformat(),
-                "QID": item_id,
+                ID_name: item_id,
                 "ChunkID": chunk_i + 1,
                 "Language": LANGUAGE,
-                "IsItem": ('Q' in item_id),
-                "IsProperty": ('P' in item_id),
+                "InstanceOf": item_instanceof,
+                "IsItem": item_id.startswith('Q'),
+                "IsProperty": item_id.startswith('P'),
                 "DumpDate": DUMPDATE
             }
 

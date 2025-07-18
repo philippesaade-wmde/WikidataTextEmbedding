@@ -20,7 +20,7 @@ time_variables = {
     'billion years': 'مليار سنة',
 }
 
-def merge_entity_text(label, description, aliases, properties):
+def merge_entity_text(label, description, aliases, instanceof, properties):
     """
     دمج خصائص الكائن (التسمية، الوصف، الألقاب، والخصائص) في نص واحد.
 
@@ -28,12 +28,19 @@ def merge_entity_text(label, description, aliases, properties):
     - label: سلسلة تمثل تسمية الكائن.
     - description: سلسلة تمثل وصف الكائن.
     - aliases: قاموس الألقاب.
+    - instanceof: قائمة بالفئات التي ينتمي إليها الكائن.
     - properties: قاموس الخصائص.
 
     الإرجاع:
     - تمثيل سلسلة للكائن، ووصفه، وتسمية، وألقابه، وادعاءاته. إذا لم توجد ادعاءات، ينتهي الوصف بنقطة.
     """
-    text = f"{label}، {description}"
+    text = label
+
+    if len(instanceof) > 0:
+        text += f" ({'، '.join(instanceof)})"
+
+    if len(description) > 0:
+        text += f"، {description}"
 
     if len(aliases) > 0:
         text += f"، المعروف أيضًا باسم {'، '.join(aliases)}"
@@ -58,15 +65,20 @@ def qualifiers_to_text(qualifiers):
     - تمثيل سلسلة للمؤهلات.
     """
     text = ""
-    for property_label, qualifier_values in qualifiers.items():
+    for claim in qualifiers:
+        property_label = claim['property_label']
+        qualifier_values = claim['values']
         if (qualifier_values is not None) and len(qualifier_values) > 0:
             if len(text) > 0:
-                text += f" ; "
+                text += f" "
 
-            text += f"{property_label}: {'، '.join(qualifier_values)}"
+            text += f"({property_label}: {'، '.join(qualifier_values)})"
+
+        else:
+            text += f"(لديها {property_label})"
 
     if len(text) > 0:
-        return f" ({text})"
+        return f" {text}"
     return ""
 
 def properties_to_text(properties):
@@ -80,22 +92,25 @@ def properties_to_text(properties):
     - تمثيل سلسلة للخصائص وقيمها.
     """
     properties_text = ""
-    for property_label, claim_values in properties.items():
+    for claim in properties:
+        property_label = claim['property_label']
+        claim_values = claim['values']
         if (claim_values is not None) and (len(claim_values) > 0):
 
             claims_text = ""
             for claim_value in claim_values:
                 if len(claims_text) > 0:
-                    claims_text += f"،\n "
+                    claims_text += f"، "
 
-                claims_text += f"«{claim_value['value']}"
+                claims_text += claim_value['value']
 
-                qualifiers = claim_value.get('qualifiers', {})
+                qualifiers = claim_value.get('qualifiers', [])
                 if len(qualifiers) > 0:
                     claims_text += qualifiers_to_text(qualifiers)
 
-                claims_text += f"»"
+            properties_text += f'\n- {property_label}: {claims_text}.'
 
-            properties_text += f'\n- {property_label}: {claims_text}'
+        else:
+            properties_text += f'\n- لديها {property_label}.'
 
     return properties_text

@@ -148,12 +148,9 @@ class WikidataDumpReader:
         else:
             raise ValueError(f"File extension '{self.extension}' is not supported")
 
-        # total=total_lines, 
-        # with tqdm(desc="Reading lines") as pbar:
         for line in lines_gen:
             self.queue.put(line)
             iters += 1
-            # pbar.update(1)  # Update progress bar
 
             if max_iterations and iters >= max_iterations:
                 break

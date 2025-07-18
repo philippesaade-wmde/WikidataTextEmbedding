@@ -13,7 +13,7 @@ API_KEY_FILENAME = os.getenv("API_KEY", None)
 EVALUATION_PATH = os.getenv("EVALUATION_PATH")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME")
 
-K = int(os.getenv("K", 50))
+K = int(os.getenv("K", 20))
 COMPARATIVE = os.getenv("COMPARATIVE", "false").lower() == "true"
 COMPARATIVE_COLS = os.getenv("COMPARATIVE_COLS")
 QUERY_COL = os.getenv("QUERY_COL")
@@ -22,8 +22,7 @@ DB_LANGUAGE = os.getenv("DB_LANGUAGE", None)
 RESTART = os.getenv("RESTART", "false").lower() == "true"
 PREFIX = os.getenv("PREFIX", "")
 
-ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-ELASTICSEARCH = os.getenv("ELASTICSEARCH", "false").lower() == "true"
+KEYWORDSEARCH = os.getenv("KEYWORDSEARCH", "false").lower() == "true"
 
 OUTPUT_FILENAME = (
     f"retrieval_results_{EVALUATION_PATH.split('/')[-2]}-{COLLECTION_NAME}-"
@@ -45,19 +44,15 @@ if not API_KEY_FILENAME:
 with open(f"../API_tokens/{API_KEY_FILENAME}") as json_in:
     datastax_token = json.load(json_in)
 
-if ELASTICSEARCH:
-    graph_store = KeywordSearchConnect(
-        ELASTICSEARCH_URL,
-        index_name=COLLECTION_NAME
-    )
+if KEYWORDSEARCH:
+    graph_store = KeywordSearchConnect()
     OUTPUT_FILENAME += "_bm25"
 else:
     graph_store = AstraDBConnect(
         datastax_token,
         COLLECTION_NAME,
         model=MODEL,
-        batch_size=BATCH_SIZE,
-        cache_embeddings=True
+        batch_size=BATCH_SIZE
     )
 
 # Load the Evaluation Dataset
@@ -105,6 +100,7 @@ def run_evaluation_process():
     """Iterate over the queries in the evaluation dataset and retrieve the QIDs and Similarity Scores from the Vector Database.
     """
     print(f"Running: {OUTPUT_FILENAME}")
+    file_update_count = 0
 
     with tqdm(total=len(eval_data), disable=False) as progressbar:
         progressbar.update(row_to_process_len)
@@ -124,7 +120,8 @@ def run_evaluation_process():
                 batch_results = graph_store.batch_retrieve(
                     batch[QUERY_COL],
                     K=K,
-                    Language=DB_LANGUAGE
+                    Language=DB_LANGUAGE,
+                    getItems=False
                 )
 
             eval_data.loc[batch_idx, 'Retrieval QIDs'] = pd.Series(
@@ -137,6 +134,7 @@ def run_evaluation_process():
 
             # TODO: Create progress bar update function
             # tqdm is not wokring in docker compose. This is the alternative
+            file_update_count += len(batch)
             progressbar.update(len(batch))
             tqdm.write(
                 progressbar.format_meter(
@@ -145,9 +143,11 @@ def run_evaluation_process():
                     progressbar.format_dict["elapsed"]
                 )
             )
-            if progressbar.n % 100 == 0:
+            if file_update_count > 100:
                 with open(OUTPUT_FILE_PATH, "wb") as pkl_file:
                     pickle.dump(eval_data, pkl_file)
+
+                file_update_count = 0
 
         with open(OUTPUT_FILE_PATH, "wb") as pkl_file:
             pickle.dump(eval_data, pkl_file)

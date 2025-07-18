@@ -43,15 +43,14 @@ services:
       PYTHONUNBUFFERED: 1
       MODEL: "jina"
       SAMPLE: "true"
-      API_KEY: "datastax_wikidata2.json"
+      API_KEY: "datastax_wikidata.json"
       EMBED_BATCH_SIZE: 8
       QUERY_BATCH_SIZE: 100
-      OFFSET: 120000
+      OFFSET: 0
       COLLECTION_NAME: "wikidatav1"
       LANGUAGE: 'en'
       TEXTIFIER_LANGUAGE: 'en'
-      ELASTICSEARCH_URL: "http://localhost:9200"
-      ELASTICSEARCH: "false"
+      DB_PATH: 'sqlite_enwiki.db'
     network_mode: "host"
 
   run_retrieval:
@@ -75,14 +74,14 @@ services:
       PYTHONUNBUFFERED: 1
       MODEL: "jina"
       API_KEY: "datastax_wikidata.json"
-      COLLECTION_NAME: "wikidata_texttest"
-      BATCH_SIZE: 100
+      COLLECTION_NAME: "wikidatav1"
+      BATCH_SIZE: 1
       EVALUATION_PATH: "Mintaka/processed_dataframe.pkl"
       # COMPARATIVE: "true"
       # COMPARATIVE_COLS: "Correct QID,Wrong QID"
       QUERY_COL: "Question"
       QUERY_LANGUAGE: "en"
-      # DB_LANGUAGE: "en"
+      DB_LANGUAGE: "en"
       PREFIX: ""
     network_mode: "host"
 
@@ -141,11 +140,9 @@ services:
         MODEL: "jinaapi"
         API_KEY: "datastax_wikidata.json"
         EMBED_BATCH_SIZE: 100
-        # QUEUE_SIZE: 5000
         NUM_PROCESSES: 23
         OFFSET: 0
         COLLECTION_NAME: "wikidata_prototype"
         LANGUAGE: 'en'
         TEXTIFIER_LANGUAGE: 'en'
-        # CHUNK_NUM: 5
       network_mode: "host"

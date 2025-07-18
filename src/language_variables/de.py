@@ -20,7 +20,7 @@ time_variables = {
     'billion years': 'Milliarden Jahre'
 }
 
-def merge_entity_text(label, description, aliases, properties):
+def merge_entity_text(label, description, aliases, instanceof, properties):
     """
     Kombiniert die Entitätsattribute (Label, Beschreibung, Aliase und Eigenschaften) zu einem einzigen Textstring.
 
@@ -28,12 +28,19 @@ def merge_entity_text(label, description, aliases, properties):
     - label: Ein String, der das Label der Entität darstellt.
     - description: Ein String, der die Beschreibung der Entität darstellt.
     - aliases: Ein Dictionary der Aliase.
+    - instanceof: Eine Liste von Klassen, zu denen die Entität gehört.
     - properties: Ein Dictionary der Eigenschaften.
 
     Rückgabe:
     - Ein String, der die Entität, ihre Beschreibung, das Label, die Aliase und ihre Ansprüche darstellt. Falls keine Ansprüche vorhanden sind, endet die Beschreibung mit einem Punkt.
     """
-    text = f"{label}, {description}"
+    text = label
+
+    if len(instanceof) > 0:
+        text += f" ({', '.join(instanceof)})"
+
+    if len(description) > 0:
+        text += f", {description}"
 
     if len(aliases) > 0:
         text += f", auch bekannt als {', '.join(aliases)}"
@@ -58,14 +65,16 @@ def qualifiers_to_text(qualifiers):
     - Ein String, der die Qualifikatoren darstellt.
     """
     text = ""
-    for property_label, qualifier_values in qualifiers.items():
+    for claim in qualifiers:
+        property_label = claim['property_label']
+        qualifier_values = claim['values']
         if (qualifier_values is not None) and len(qualifier_values) > 0:
             if len(text) > 0:
                 text += f" "
 
             text += f"({property_label}: {', '.join(qualifier_values)})"
 
-        elif (qualifier_values is not None):
+        else:
             text += f"(hat {property_label})"
 
     if len(text) > 0:
@@ -83,7 +92,9 @@ def properties_to_text(properties):
     - Ein String, der die Eigenschaften und ihre Werte darstellt.
     """
     properties_text = ""
-    for property_label, claim_values in properties.items():
+    for claim in properties:
+        property_label = claim['property_label']
+        claim_values = claim['values']
         if (claim_values is not None) and (len(claim_values) > 0):
 
             claims_text = ""
@@ -93,13 +104,13 @@ def properties_to_text(properties):
 
                 claims_text += claim_value['value']
 
-                qualifiers = claim_value.get('qualifiers', {})
+                qualifiers = claim_value.get('qualifiers', [])
                 if len(qualifiers) > 0:
                     claims_text += qualifiers_to_text(qualifiers)
 
-            properties_text += f'\n- {property_label}: „{claims_text}“'
+            properties_text += f'\n- {property_label}: {claims_text}.'
 
-        elif (claim_values is not None):
-            properties_text += f'\n- hat {property_label}'
+        else:
+            properties_text += f'\n- hat {property_label}.'
 
     return properties_text

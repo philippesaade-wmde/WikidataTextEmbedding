@@ -28,8 +28,6 @@ def save_items_to_sqlite(item, data_batch, sqlitDBlock):
             'labels': labels,
             'descriptions': descriptions,
             'in_wikipedia': in_wikipedia,
-            'is_property': ('P' in item['id']),
-            'is_item': ('Q' in item['id']),
         })
 
         with sqlitDBlock:

@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from src.wikidataLangDB import create_wikidatalang_db
 from src.wikidataEmbed import WikidataTextifier
-from src.wikidataRetriever import AstraDBConnect, KeywordSearchConnect
+from src.wikidataRetriever import AstraDBConnect
 
 MODEL = os.getenv("MODEL", "jina")
 SAMPLE = os.getenv("SAMPLE", "false").lower() == "true"
@@ -26,10 +26,6 @@ DUMPDATE = os.getenv("DUMPDATE", '09/18/2024')
 
 DB_PATH = os.getenv("DB_PATH", f'sqlite_{LANGUAGE}wiki.db')
 
-# Run Keyword search with an elastic search database instead of a vector search.
-ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-ELASTICSEARCH = os.getenv("ELASTICSEARCH", "false").lower() == "true"
-
 if not COLLECTION_NAME:
     raise ValueError("The COLLECTION_NAME environment variable is required")
 
@@ -46,23 +42,15 @@ textifier = WikidataTextifier(
 
 WikidataLang = create_wikidatalang_db(db_filname=DB_PATH)
 
+with open(f"../API_tokens/{API_KEY_FILENAME}") as json_in:
+    datastax_token = json.load(json_in)
 
-if ELASTICSEARCH:
-    graph_store = KeywordSearchConnect(
-        ELASTICSEARCH_URL,
-        index_name=COLLECTION_NAME
-    )
-else:
-    with open(f"../API_tokens/{API_KEY_FILENAME}") as json_in:
-        datastax_token = json.load(json_in)
-
-    graph_store = AstraDBConnect(
-        datastax_token,
-        COLLECTION_NAME,
-        model=MODEL,
-        batch_size=EMBED_BATCH_SIZE,
-        cache_embeddings=False
-    )
+graph_store = AstraDBConnect(
+    datastax_token,
+    COLLECTION_NAME,
+    model=MODEL,
+    batch_size=EMBED_BATCH_SIZE
+)
 
 
 def get_data_generator():
@@ -126,19 +114,17 @@ def add_items_to_db():
 
             for entity in entity_generator:
                 progressbar.update(1)
-                if ELASTICSEARCH:
-                    chunks = [textifier.entity_to_text(entity)]
-                else:
-                    chunks = textifier.chunk_text(
-                        entity,
-                        graph_store.tokenizer,
-                        max_length=graph_store.max_token_size
-                    )
+                chunks = textifier.chunk_text(
+                    entity,
+                    graph_store.tokenizer,
+                    max_length=graph_store.max_token_size
+                )
 
                 for chunk_i in range(len(chunks)):
                     md5_hash = hashlib.md5(
                         chunks[chunk_i].encode('utf-8')
                     ).hexdigest()
+                    ID_name = "QID" if entity.id.startswith('Q') else "PID"
 
                     metadata = {
                         "MD5": md5_hash,
@@ -146,11 +132,11 @@ def add_items_to_db():
                         "Description": entity.description,
                         "Aliases": entity.aliases,
                         "Date": datetime.now().isoformat(),
-                        "QID": entity.id,
+                        ID_name: entity.id,
                         "ChunkID": chunk_i+1,
                         "Language": LANGUAGE,
-                        "IsItem": ('Q' in entity.id),
-                        "IsProperty": ('P' in entity.id),
+                        "IsItem": entity.id.startswith('Q'),
+                        "IsProperty": entity.id.startswith('P'),
                         "DumpDate": DUMPDATE
                     }
                     graph_store.add_document(

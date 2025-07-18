@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator
 import json
 import os
+import traceback
 
 """
 SQLite database setup for quick entity lookup. A database file is created per language.
@@ -93,7 +94,7 @@ def create_wikidatalang_db(
                     worked = True
                 except Exception as e:
                     session.rollback()
-                    print(e)
+                    traceback.print_exc()
             return worked
 
         @staticmethod

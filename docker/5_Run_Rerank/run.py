@@ -12,12 +12,18 @@ MODEL = os.getenv("MODEL", "jina")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 100))
 RETRIEVAL_FILENAME = os.getenv("RETRIEVAL_FILENAME")
 LANGUAGE = os.getenv("LANGUAGE", 'en')
+TEXTIFIER_LANGUAGE = os.getenv("TEXTIFIER_LANGUAGE", None)
 QUERY_COL = os.getenv("QUERY_COL")
 RESTART = os.getenv("RESTART", "false").lower() == "true"
 
-textifier = WikidataTextifier(language=LANGUAGE)
-reranker = JinaAIReranker()
+if not TEXTIFIER_LANGUAGE:
+    TEXTIFIER_LANGUAGE = LANGUAGE
 
+textifier = WikidataTextifier(
+    language=LANGUAGE,
+    langvar_filename=TEXTIFIER_LANGUAGE
+)
+reranker = JinaAIReranker()
 
 pkl_fpath = f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl"
 with open(pkl_fpath, "rb") as pkl_file:
@@ -60,6 +66,7 @@ if __name__ == "__main__":
 
             # TODO: create new function to update tqdm progressbar
             # tqdm is not working in docker compose. This is the alternative
+            file_update_count += 1
             progressbar.update(1)
             tqdm.write(
                 progressbar.format_meter(
@@ -68,10 +75,12 @@ if __name__ == "__main__":
                     progressbar.format_dict["elapsed"]
                 )
             )
-            if progressbar.n % 100 == 0:
+            if file_update_count > 100:
                 pkl_fpath = f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl"
                 with open(pkl_fpath, "wb") as pkl_file:
                     pickle.dump(eval_data, pkl_file, "wb")
+
+                file_update_count = 0
 
         # TODO: Why is this definition and open twice at the end?
         pkl_fpath = f"../data/Evaluation Data/{RETRIEVAL_FILENAME}.pkl"
