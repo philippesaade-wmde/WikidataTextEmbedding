@@ -1,6 +1,5 @@
 import json
 import os
-import hashlib
 import time
 
 from datasets import load_dataset
@@ -73,7 +72,6 @@ def process_items(queue, progress_bar):
         COLLECTION_NAME,
         model=MODEL,
         batch_size=EMBED_BATCH_SIZE,
-        cache_embeddings="wikidata_prototype"
     )
     textifier = WikidataTextifier(
         language=LANGUAGE,
@@ -97,50 +95,49 @@ def process_items(queue, progress_bar):
             item_id,
             json.loads(item['descriptions'])
         )
-        item_aliases = textifier.get_aliases(
-            json.loads(item['aliases'])
-        )
         item_claims = json.loads(item['claims'])
-        item_instanceof = textifier.get_instanceof(
-            item_claims
-        )
+        item_instanceof = [c['mainsnak']['datavalue']['id'] for c in item_claims.get("P31", [])]
 
-        entity_obj = SimpleNamespace()
-        entity_obj.id = item_id
-        entity_obj.label = item_label
-        entity_obj.description = item_description
-        entity_obj.aliases = item_aliases
-        entity_obj.claims = item_claims
+        label_included = item_label and (item_label != '') # Exclude items with no label
+        content_included = (item_description and (item_description != ''))\
+                            or len(item_claims) > 0 # Exclude items with no claims or no description
+        not_disambiguation = 'Q4167410' not in item_instanceof # Exclude disambiguation pages
 
-        chunks = textifier.chunk_text(
-            entity_obj,
-            graph_store.tokenizer,
-            max_length=graph_store.max_token_size
-        )
+        if label_included and content_included and not_disambiguation:
 
-        for chunk_i, chunk in enumerate(chunks):
-            md5_hash = hashlib.md5(chunk.encode('utf-8')).hexdigest()
-            ID_name = "QID" if item_id.startswith('Q') else "PID"
-            metadata = {
-                "MD5": md5_hash,
-                "Label": item_label,
-                "Description": item_description,
-                "Aliases": item_aliases,
-                "Date": datetime.now().isoformat(),
-                ID_name: item_id,
-                "ChunkID": chunk_i + 1,
-                "Language": LANGUAGE,
-                "InstanceOf": item_instanceof,
-                "IsItem": item_id.startswith('Q'),
-                "IsProperty": item_id.startswith('P'),
-                "DumpDate": DUMPDATE
-            }
+            entity_obj = SimpleNamespace()
+            entity_obj.id = item_id
+            entity_obj.label = json.loads(item['labels'])
+            entity_obj.description = json.loads(item['descriptions'])
+            entity_obj.aliases = json.loads(item['aliases'])
+            entity_obj.claims = item_claims
 
-            graph_store.add_document(
-                id=f"{item_id}_{LANGUAGE}_{chunk_i+1}",
-                text=chunk,
-                metadata=metadata
+            chunks = textifier.chunk_text(
+                entity_obj,
+                graph_store.tokenizer,
+                max_length=graph_store.max_token_size
             )
+
+            for chunk_i, chunk in enumerate(chunks):
+                ID_name = "QID" if item_id.startswith('Q') else "PID"
+                metadata = {
+                    "Label": item_label,
+                    "Description": item_description,
+                    "Date": datetime.now().isoformat(),
+                    ID_name: item_id,
+                    "ChunkID": chunk_i + 1,
+                    "Language": LANGUAGE,
+                    "InstanceOf": item_instanceof,
+                    "IsItem": item_id.startswith('Q'),
+                    "IsProperty": item_id.startswith('P'),
+                    "DumpDate": DUMPDATE
+                }
+
+                graph_store.add_document(
+                    id=f"{item_id}_{LANGUAGE}_{chunk_i+1}",
+                    text=chunk,
+                    metadata=metadata
+                )
 
     graph_store.push_all()
 
