@@ -11,7 +11,5 @@ transformers
 einops
 
 # wikidataRetriever
-langchain-astradb
-astrapy
-elasticsearch
-mediawikiapi
+langchain-astradb==0.6.0
+astrapy==2.0.1

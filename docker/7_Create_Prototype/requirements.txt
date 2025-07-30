@@ -11,12 +11,7 @@ transformers
 einops
 
 # wikidataRetriever
-langchain-core
-langchainhub
-langchain_experimental
-ragstack-ai-langchain[knowledge-store]==1.3.0
-langchain-astradb
-astrapy
-elasticsearch
+langchain-astradb==0.6.0
+astrapy==2.0.1
 
 datasets
