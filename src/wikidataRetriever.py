@@ -17,7 +17,7 @@ class AstraDBConnect:
         - batch_size (int): Number of documents to accumulate before pushing to AstraDB. Default is 8.
         """
         from astrapy import DataAPIClient
-        from astrapy.exceptions import CollectionInsertManyException
+        from astrapy.exceptions.collection_exceptions import CollectionInsertManyException
         from astrapy.api_options import APIOptions, TimeoutOptions
 
         from multiprocessing import Queue
@@ -45,12 +45,12 @@ class AstraDBConnect:
         self.graph_store = database0.get_collection(collection_name)
 
         if model == 'jina':
-            self.embeddings = JinaAIEmbedder(embedding_dim=1024)
+            self.embeddings = JinaAIEmbedder(embedding_dim=512)
             self.tokenizer = self.embeddings.tokenizer
             self.max_token_size = 1024
 
         elif model == 'jinaapi':
-            self.embeddings = JinaAIAPIEmbedder(embedding_dim=1024)
+            self.embeddings = JinaAIAPIEmbedder(embedding_dim=512)
             self.tokenizer = AutoTokenizer.from_pretrained("jinaai/jina-embeddings-v3", trust_remote_code=True)
             self.max_token_size = 1024
 
