@@ -30,6 +30,8 @@ CHUNK_SIZES_PATH = os.getenv("CHUNK_SIZES_PATH",
                              "Wikidata/wikidata_chunk_sizes_2024-09-18.json")
 CHUNK_NUM = os.getenv("CHUNK_NUM")
 
+CHECK_IDS_PUSHED = os.getenv("CHECK_IDS_PUSHED", "false").lower() == "true"
+
 assert CHUNK_NUM is not None, (
     "Please provide `CHUNK_NUM` env var at docker run"
 )
@@ -132,6 +134,9 @@ def process_items(queue, progress_bar):
                     "IsProperty": item_id.startswith('P'),
                     "DumpDate": DUMPDATE
                 }
+
+                if CHECK_IDS_PUSHED and graph_store.is_id_pushed(item_id):
+                    continue  # Skip if ID already exists
 
                 graph_store.add_document(
                     id=f"{item_id}_{LANGUAGE}_{chunk_i+1}",

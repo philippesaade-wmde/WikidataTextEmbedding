@@ -179,17 +179,18 @@ class AstraDBConnect:
                 filter['metadata.Language']= languages[0]
 
         if (ids is not None) and (ids != ""):
+            ID_name = "QID" if isitem else "PID"
             ids = ids.split(',')
             if len(ids) > 1:
                 if '$or' in filter:
                     filter['$and'] = [
-                        {'$or': [{'metadata.ID': l} for l in ids]},
+                        {'$or': [{f'metadata.{ID_name}': l} for l in ids]},
                         {'$or': filter['$or']}
                     ]
                 else:
-                    filter['$or'] = [{'metadata.ID': l} for l in ids]
+                    filter['$or'] = [{f'metadata.{ID_name}': l} for l in ids]
             else:
-                filter['metadata.ID']= ids[0]
+                filter[f'metadata.{ID_name}']= ids[0]
 
         if isitem:
             filter['metadata.IsItem']= True
@@ -274,6 +275,24 @@ class AstraDBConnect:
 
         qids, scores = zip(*results)
         return list(qids), list(scores)
+
+    def is_id_pushed(self, id):
+        """
+        Check if a list of IDs are already pushed to the AstraDB collection.
+
+        Parameters:
+        - ids (list): List of IDs to check.
+
+        Returns:
+        - list: List of boolean values indicating whether each ID is present in the collection.
+        """
+        results = self.graph_store.find(
+            {'_id': id},
+            projection={"_id": 1},
+            limit=1
+        )
+
+        return next(results, None) is not None
 
 class KeywordSearchConnect:
 
