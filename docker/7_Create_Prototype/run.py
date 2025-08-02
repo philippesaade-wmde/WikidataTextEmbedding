@@ -121,6 +121,7 @@ def process_items(queue, progress_bar):
             )
 
             for chunk_i, chunk in enumerate(chunks):
+                db_id = f"{item_id}_{LANGUAGE}_{chunk_i+1}"
                 ID_name = "QID" if item_id.startswith('Q') else "PID"
                 metadata = {
                     "Label": item_label,
@@ -135,11 +136,11 @@ def process_items(queue, progress_bar):
                     "DumpDate": DUMPDATE
                 }
 
-                if CHECK_IDS_PUSHED and graph_store.is_id_pushed(item_id):
+                if CHECK_IDS_PUSHED and graph_store.is_id_pushed(db_id):
                     continue  # Skip if ID already exists
 
                 graph_store.add_document(
-                    id=f"{item_id}_{LANGUAGE}_{chunk_i+1}",
+                    id=db_id,
                     text=chunk,
                     metadata=metadata
                 )
