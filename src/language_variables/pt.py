@@ -20,7 +20,7 @@ time_variables = {
     'billion years': 'bilhão de anos',
 }
 
-def merge_entity_text(label, description, aliases, instanceof, properties):
+def merge_entity_text(label, description, aliases, properties):
     """
     Combina os atributos de uma entidade (label, description, aliases, instanceof, properties)
     em uma única string de texto em português.
@@ -37,9 +37,6 @@ def merge_entity_text(label, description, aliases, instanceof, properties):
       Se não houver propriedades, o texto termina com ponto final.
     """
     texto = label
-
-    if len(instanceof) > 0:
-        texto += f" ({', '.join(instanceof)})"
 
     if len(description) > 0:
         texto += f", {description}"

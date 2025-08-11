@@ -20,7 +20,7 @@ time_variables = {
     'billion years': 'миллиардов лет',
 }
 
-def merge_entity_text(label, description, aliases, instanceof, properties):
+def merge_entity_text(label, description, aliases, properties):
     """
     Объединяет атрибуты сущности (label, description, aliases, properties) в одну
     осмысленную строку естественного языка.
@@ -37,9 +37,6 @@ def merge_entity_text(label, description, aliases, instanceof, properties):
       свойств. Если свойств нет, строка заканчивается точкой.
     """
     text = label
-
-    if len(instanceof) > 0:
-        text += f" ({', '.join(instanceof)})"
 
     if len(description) > 0:
         text += f", {description}"

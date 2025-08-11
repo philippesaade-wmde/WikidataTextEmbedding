@@ -197,6 +197,7 @@ Note: If the Hugging Face dataset is already available, this is the only contain
 | `DUMPDATE`          | `09/18/2024`  | Metadata tag for the original Wikidata dump date |
 | `CHUNK_SIZES_PATH`          | `Wikidata/wikidata_chunk_sizes_2024-09-18.json`  | Path to the JSON file storing number of entities per chunk |
 | `CHUNK_NUM`          | `None`  | Chunk number to process (required for each container run) |
+| `CHECK_IDS_PUSHED`          | `false`  | Chunk if items exist in the database before calculating embeddings |
 
 #### Output
 - Streams and embeds entities from philippesaade/wikidata on the Hugging Face Hub.

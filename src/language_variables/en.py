@@ -20,7 +20,7 @@ time_variables = {
     'billion years': 'billion years',
 }
 
-def merge_entity_text(label, description, aliases, instanceof, properties):
+def merge_entity_text(label, description, aliases, properties):
     """
     Combines the entity attributes (label, description, aliases, and properties) into a single text string.
 
@@ -35,9 +35,6 @@ def merge_entity_text(label, description, aliases, instanceof, properties):
     - A string representation of the entity, its description, label, aliases, and its claims. If there are no claims, the description ends with a period.
     """
     text = label
-
-    if len(instanceof) > 0:
-        text += f" ({', '.join(instanceof)})"
 
     if len(description) > 0:
         text += f", {description}"

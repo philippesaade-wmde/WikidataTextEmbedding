@@ -117,14 +117,14 @@ class WikidataTextifier:
 
         # Combine the aliases from the specified language and the
         # multilingual class. Use set format to avoid duplicates.
-        aliases = set()
+        aliases_list = set()
         if self.language in aliases:
-            aliases.update([x['value'] for x in aliases[self.language]])
+            aliases_list.update([x.get('value', x) for x in aliases[self.language]])
 
         if 'mul' in aliases:
-            aliases.update([x['value'] for x in aliases['mul']])
+            aliases_list.update([x.get('value', x) for x in aliases['mul']])
 
-        return list(aliases)
+        return list(aliases_list)
 
     def get_property_info(self, pid):
         """
@@ -152,25 +152,6 @@ class WikidataTextifier:
                 'property_filter': info.property_filter,
                 'property_sort': info.property_sort
             }
-
-    def get_instanceof(self, properties):
-        """
-        Retrieves the 'instance of' (P31) property values for a Wikidata entity.
-
-        Parameters:
-        - properties (dict): A dictionary of properties (claims) for the entity.
-
-        Returns:
-        - list: A list of values for the 'instance of' property (P31).
-        """
-        instanceof = properties.get('P31', [])
-        instanceof = self.properties_to_list({'P31': instanceof})
-        if len(instanceof) == 0:
-            return []
-
-        values = instanceof[0]['values']
-        values = [val['value'] for val in values if 'value' in val]
-        return values
 
     def entity_to_text(self, entity, properties=None):
         """
@@ -200,15 +181,12 @@ class WikidataTextifier:
 
         aliases = self.get_aliases(entity.aliases)
 
-        instanceof = self.get_instanceof(entity.claims)
-
         # Merge the label, description, aliases, and properties into a single
         # text string as the Data Model per language through langvar descriptors
         return self.langvar.merge_entity_text(
             label,
             description,
             aliases,
-            instanceof,
             properties
         )
 
@@ -663,8 +641,16 @@ class WikidataTextifier:
         if len(tokens['input_ids']) < max_length:
             return [entity_text]
 
+        properties = self.properties_to_list(entity.claims)
+        # Separate instance of from other properties
+        instance_of = [p for p in properties if p['property_id'] == 'P31']
+        properties = [p for p in properties if p['property_id'] != 'P31']
+
         # If the label and description already exceed the maximum tokens then we will truncate it and will not include chunks that include claims.
-        entity_description= self.entity_to_text(entity, properties=[])
+        entity_description= self.entity_to_text(
+            entity,
+            properties=instance_of
+        )
         tokens = tokenizer(entity_description, add_special_tokens=False, return_offsets_mapping=True)
         token_ids, offsets = tokens['input_ids'], tokens['offset_mapping']
         if len(token_ids) >= max_length:
@@ -672,12 +658,14 @@ class WikidataTextifier:
             return [entity_description[start:end]]  # Return the truncated portion of the original text
 
         # Create the chunks assuming the description/label text is smaller than the maximum tokens.
-        properties = self.properties_to_list(entity.claims)
         chunks = []
         chunk_claims = []
         for claim in properties:
             current_chunk_claims = [*chunk_claims, claim]
-            entity_text = self.entity_to_text(entity, current_chunk_claims)
+            entity_text = self.entity_to_text(
+                entity,
+                [*instance_of, *current_chunk_claims] # Include instance of in every chunk
+            )
             tokens = tokenizer(entity_text, add_special_tokens=False, return_offsets_mapping=True)
 
             # Check when including the current claim if we exceed the maximum tokens.
@@ -697,7 +685,10 @@ class WikidataTextifier:
 
         # Add the final chunk if any claims remain
         if len(chunk_claims) > 0:
-            entity_text = self.entity_to_text(entity, chunk_claims)
+            entity_text = self.entity_to_text(
+                entity,
+                [*instance_of, *chunk_claims] # Include instance of in every chunk
+            )
             tokens = tokenizer(entity_text, add_special_tokens=False, return_offsets_mapping=True)
 
             if len(tokens['input_ids']) >= max_length:

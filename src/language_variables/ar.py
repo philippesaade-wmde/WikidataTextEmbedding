@@ -20,7 +20,7 @@ time_variables = {
     'billion years': 'مليار سنة',
 }
 
-def merge_entity_text(label, description, aliases, instanceof, properties):
+def merge_entity_text(label, description, aliases, properties):
     """
     دمج خصائص الكائن (التسمية، الوصف، الألقاب، والخصائص) في نص واحد.
 
@@ -35,9 +35,6 @@ def merge_entity_text(label, description, aliases, instanceof, properties):
     - تمثيل سلسلة للكائن، ووصفه، وتسمية، وألقابه، وادعاءاته. إذا لم توجد ادعاءات، ينتهي الوصف بنقطة.
     """
     text = label
-
-    if len(instanceof) > 0:
-        text += f" ({'، '.join(instanceof)})"
 
     if len(description) > 0:
         text += f"، {description}"

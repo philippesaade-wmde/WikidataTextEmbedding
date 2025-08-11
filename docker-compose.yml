@@ -139,7 +139,7 @@ services:
         PYTHONUNBUFFERED: 1
         MODEL: "jinaapi"
         API_KEY: "datastax_wikidata.json"
-        EMBED_BATCH_SIZE: 100
+        EMBED_BATCH_SIZE: 10
         NUM_PROCESSES: 23
         OFFSET: 0
         COLLECTION_NAME: "wikidata_prototype"
