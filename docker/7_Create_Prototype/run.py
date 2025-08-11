@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from src.wikidataEmbed import WikidataTextifier
 from src.wikidataRetriever import AstraDBConnect
+from src.wikidataIDLogDB import WikidataIDLog
 
 MODEL = os.getenv("MODEL", "jinaapi")
 NUM_PROCESSES = int(os.getenv("NUM_PROCESSES", 4))
@@ -104,8 +105,13 @@ def process_items(queue, progress_bar):
         content_included = (item_description and (item_description != ''))\
                             or len(item_claims) > 0 # Exclude items with no claims or no description
         not_disambiguation = 'Q4167410' not in item_instanceof # Exclude disambiguation pages
+        push_check = (not CHECK_IDS_PUSHED) or \
+            (not WikidataIDLog.is_pushed(item_id))
 
-        if label_included and content_included and not_disambiguation:
+        if label_included \
+            and content_included \
+                and not_disambiguation \
+                    and push_check:
 
             entity_obj = SimpleNamespace()
             entity_obj.id = item_id
@@ -136,14 +142,13 @@ def process_items(queue, progress_bar):
                     "DumpDate": DUMPDATE
                 }
 
-                if CHECK_IDS_PUSHED and graph_store.is_id_pushed(db_id):
-                    continue  # Skip if ID already exists
-
                 graph_store.add_document(
                     id=db_id,
                     text=chunk,
                     metadata=metadata
                 )
+
+            WikidataIDLog.add_id(item_id)
 
     graph_store.push_all()
 

@@ -4,6 +4,7 @@ from .wikidataEntityDB import WikidataEntity, WikidataItem, WikidataProperty
 from .wikidataEmbed import WikidataTextifier
 from .JinaAI import JinaAIEmbedder, JinaAIReranker, JinaAIAPIEmbedder
 from .wikidataRetriever import AstraDBConnect, KeywordSearchConnect
+from .wikidataIDLogDB import WikidataIDLog
 
 __all__ = [
     "WikidataDumpReader",
@@ -18,4 +19,5 @@ __all__ = [
     "JinaAIAPIEmbedder",
     "AstraDBConnect",
     "KeywordSearchConnect",
+    "WikidataIDLog"
 ]
