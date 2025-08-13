@@ -72,6 +72,9 @@ def qualifiers_to_text(qualifiers):
             text += f"({property_label}: {', '.join(qualifier_values)})"
 
         else:
+            if len(text) > 0:
+                text += f" "
+
             text += f"(hat {property_label})"
 
     if len(text) > 0:

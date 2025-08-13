@@ -72,6 +72,9 @@ def qualifiers_to_text(qualifiers):
             text += f"({property_label}: {', '.join(qualifier_values)})"
 
         else:
+            if len(text) > 0:
+                text += f" "
+
             text += f"(has {property_label})"
 
     if len(text) > 0:
@@ -135,7 +138,7 @@ def merge_property_text(label, description, aliases, examples):
     """
 
     # Same as merge_entity_text but without instanceof or properties
-    text = merge_entity_text(label, description, aliases, [], [])
+    text = merge_entity_text(label, description, aliases, [])
 
     if len(examples) > 0:
         examples_text = properties_to_text(examples, include_subject=True)
