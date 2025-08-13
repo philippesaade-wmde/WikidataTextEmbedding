@@ -148,12 +148,12 @@ def process_items(queue, progress_bar):
                     metadata=metadata
                 )
                 if pushed_ids:
-                    WikidataIDLog.add_ids(pushed_ids)
+                    WikidataIDLog.add_bulk_ids(pushed_ids)
 
 
     pushed_ids = graph_store.push_all()
     if pushed_ids:
-        WikidataIDLog.add_ids(pushed_ids)
+        WikidataIDLog.add_bulk_ids(pushed_ids)
 
 if __name__ == "__main__":
     queue = Queue(maxsize=QUEUE_SIZE)
