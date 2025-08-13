@@ -105,13 +105,10 @@ def process_items(queue, progress_bar):
         content_included = (item_description and (item_description != ''))\
                             or len(item_claims) > 0 # Exclude items with no claims or no description
         not_disambiguation = 'Q4167410' not in item_instanceof # Exclude disambiguation pages
-        push_check = (not CHECK_IDS_PUSHED) or \
-            (not WikidataIDLog.is_pushed(item_id))
 
         if label_included \
             and content_included \
-                and not_disambiguation \
-                    and push_check:
+                and not_disambiguation:
 
             entity_obj = SimpleNamespace()
             entity_obj.id = item_id
@@ -128,27 +125,31 @@ def process_items(queue, progress_bar):
 
             for chunk_i, chunk in enumerate(chunks):
                 db_id = f"{item_id}_{LANGUAGE}_{chunk_i+1}"
-                ID_name = "QID" if item_id.startswith('Q') else "PID"
-                metadata = {
-                    "Label": item_label,
-                    "Description": item_description,
-                    "Date": datetime.now().isoformat(),
-                    ID_name: item_id,
-                    "ChunkID": chunk_i + 1,
-                    "Language": LANGUAGE,
-                    "InstanceOf": item_instanceof,
-                    "IsItem": item_id.startswith('Q'),
-                    "IsProperty": item_id.startswith('P'),
-                    "DumpDate": DUMPDATE
-                }
+                push_check = (not CHECK_IDS_PUSHED) or \
+                    (not WikidataIDLog.is_pushed(db_id))
 
-                pushed_ids = graph_store.add_document(
-                    id=db_id,
-                    text=chunk,
-                    metadata=metadata
-                )
-                if pushed_ids:
-                    WikidataIDLog.add_bulk_ids(pushed_ids)
+                if push_check:
+                    ID_name = "QID" if item_id.startswith('Q') else "PID"
+                    metadata = {
+                        "Label": item_label,
+                        "Description": item_description,
+                        "Date": datetime.now().isoformat(),
+                        ID_name: item_id,
+                        "ChunkID": chunk_i + 1,
+                        "Language": LANGUAGE,
+                        "InstanceOf": item_instanceof,
+                        "IsItem": item_id.startswith('Q'),
+                        "IsProperty": item_id.startswith('P'),
+                        "DumpDate": DUMPDATE
+                    }
+
+                    pushed_ids = graph_store.add_document(
+                        id=db_id,
+                        text=chunk,
+                        metadata=metadata
+                    )
+                    if pushed_ids:
+                        WikidataIDLog.add_bulk_ids(pushed_ids)
 
 
     pushed_ids = graph_store.push_all()
