@@ -1,4 +1,4 @@
-for i in $(seq 0 112); do
+for i in $(seq 100 112); do
   sudo docker compose run --build \
     -e COLLECTION_NAME="v2_09_2025" \
     -e QUERY_LANGUAGE="en" \

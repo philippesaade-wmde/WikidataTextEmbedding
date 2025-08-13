@@ -142,16 +142,18 @@ def process_items(queue, progress_bar):
                     "DumpDate": DUMPDATE
                 }
 
-                graph_store.add_document(
+                pushed_ids = graph_store.add_document(
                     id=db_id,
                     text=chunk,
                     metadata=metadata
                 )
+                if pushed_ids:
+                    WikidataIDLog.add_ids(pushed_ids)
 
-            WikidataIDLog.add_id(item_id)
 
-    graph_store.push_all()
-
+    pushed_ids = graph_store.push_all()
+    if pushed_ids:
+        WikidataIDLog.add_ids(pushed_ids)
 
 if __name__ == "__main__":
     queue = Queue(maxsize=QUEUE_SIZE)

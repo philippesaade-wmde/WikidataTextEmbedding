@@ -65,6 +65,9 @@ class AstraDBConnect:
         - id (str): The unique identifier for the document (e.g., a QID).
         - text (str): The text content of the document.
         - metadata (dict): Additional metadata about the document.
+
+        Returns:
+        - list: List of pushed IDs.
         """
         doc = {
             '_id': id,
@@ -75,7 +78,9 @@ class AstraDBConnect:
 
         # If we reach the batch size, push the accumulated documents to AstraDB
         if self.doc_batch.qsize() >= self.batch_size:
-            self.push_batch()
+            return self.push_batch()
+
+        return []
 
     def push_batch(self):
         """
@@ -85,16 +90,18 @@ class AstraDBConnect:
             return False
 
         docs = []
+        ids = []
         for _ in range(self.batch_size):
             try:
                 doc = self.doc_batch.get_nowait()
                 docs.append(doc)
+                ids.append(doc['_id'])
             except:
                 # Queue is empty
                 break
 
         if len(docs) == 0:
-            return False
+            return []
 
         while True:
             try:
@@ -112,14 +119,14 @@ class AstraDBConnect:
         while True:
             try:
                 self.graph_store.insert_many(docs)
-                break
+                return ids
             except self.duplicate_exception as e:
-                break # Ignore duplicate IDs error. Non-duplicates in the list get pushed anyway
+                return ids # Ignore duplicate IDs error. Non-duplicates in the list get pushed anyway
             except Exception as e:
                 traceback.print_exc()
                 time.sleep(3)
 
-        return True
+        return []
 
     def push_all(self):
         while True:
