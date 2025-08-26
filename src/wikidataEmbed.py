@@ -136,22 +136,26 @@ class WikidataTextifier:
         Returns:
         - dict: A dictionary containing the property label, ID, filter, and sort order.
         """
-        info = WikidataEntity.get_item(pid)
-        if info is None:
-            return {
-                'property_label': None,
-                'property_id': pid,
-                'property_filter': 'full',
-                'property_sort': 100000
-            }
+        try:
+            info = WikidataEntity.get_item(pid)
+            if not info:
+                return {
+                    'property_label': None,
+                    'property_id': pid,
+                    'property_filter': 'full',
+                    'property_sort': 100000
+                }
 
-        label = self.get_label(pid, labels=info.labels)
-        return {
-                'property_label': label,
-                'property_id': pid,
-                'property_filter': info.property_filter,
-                'property_sort': info.property_sort
-            }
+            label = self.get_label(pid, labels=info.labels)
+            return {
+                    'property_label': label,
+                    'property_id': pid,
+                    'property_filter': info.property_filter,
+                    'property_sort': info.property_sort
+                }
+        except Exception as e:
+            print(pid)
+            raise e
 
     def entity_to_text(self, entity, properties=None):
         """
@@ -252,7 +256,7 @@ class WikidataTextifier:
             if not all_values and (p_data['property_filter'] == 'remove'):
                 continue
 
-            if p_data['property_label'] is None:
+            if not p_data['property_label']:
                 continue
 
             p_value_data = None
@@ -323,7 +327,7 @@ class WikidataTextifier:
             if not all_values and q_data['property_filter'] == 'remove':
                 continue
 
-            if q_data['property_label'] is None:
+            if not q_data['property_label']:
                 continue
 
             q_value_data = []

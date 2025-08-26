@@ -41,11 +41,11 @@ def merge_entity_text(label, description, aliases, properties):
         text += f", {description}"
 
     if len(aliases) > 0:
-        text += f", également connu sous le nom de {', '.join(aliases)}"
+        text += f", aussi connu sous le nom de {', '.join(aliases)}"
 
     if len(properties) > 0:
         properties_text = properties_to_text(properties)
-        text = f"{text}. Ses attributs incluent : {properties_text}"
+        text = f"{text}. Ses attributs incluent: {properties_text}"
     else:
         text = f"{text}."
 
