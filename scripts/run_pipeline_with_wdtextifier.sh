@@ -3,12 +3,18 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-WDTEXTIFIER_DIR="${WDTEXTIFIER_DIR:-$ROOT_DIR/WikidataTextifier}"
+WDTEXTIFIER_DIR="$ROOT_DIR/WikidataTextifier"
 WDTEXTIFIER_REPO="${WDTEXTIFIER_REPO:-https://github.com/wmde/WikidataTextifier.git}"
 WDTEXTIFIER_REF="${WDTEXTIFIER_REF:-main}"
-WDTEXTIFIER_PROJECT="${WDTEXTIFIER_PROJECT:-wikidatatextifier}"
-WDTEXTIFIER_COMPOSE_FILE="${WDTEXTIFIER_COMPOSE_FILE:-$WDTEXTIFIER_DIR/docker-compose.yml}"
-PIPELINE_PROJECT="${PIPELINE_PROJECT:-wikidatatextembedding-pipeline}"
+WDTEXTIFIER_PROJECT="wikidatatextifier"
+WDTEXTIFIER_COMPOSE_FILE="$WDTEXTIFIER_DIR/docker-compose.yml"
+PIPELINE_PROJECT="wikidatatextembedding-pipeline"
+ENV_FILE="$ROOT_DIR/.env"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing env file: $ENV_FILE" >&2
+  exit 1
+fi
 
 if [[ ! -f "$WDTEXTIFIER_COMPOSE_FILE" ]]; then
   if [[ -d "$WDTEXTIFIER_DIR/.git" ]]; then
@@ -30,12 +36,14 @@ fi
 docker compose \
   -p "$WDTEXTIFIER_PROJECT" \
   -f "$WDTEXTIFIER_COMPOSE_FILE" \
+  --env-file "$ENV_FILE" \
   up -d db wikibase wdtextifier
 
 WD_CONTAINER_ID="$(
   docker compose \
     -p "$WDTEXTIFIER_PROJECT" \
     -f "$WDTEXTIFIER_COMPOSE_FILE" \
+    --env-file "$ENV_FILE" \
     ps -q wdtextifier
 )"
 
@@ -70,4 +78,7 @@ fi
 
 cd "$ROOT_DIR"
 WDTEXTIFIER_COMPOSE_NETWORK="${WDTEXTIFIER_PROJECT}_default" \
-  docker compose -p "$PIPELINE_PROJECT" run --rm pipeline "$@"
+  docker compose \
+    -p "$PIPELINE_PROJECT" \
+    --env-file "$ENV_FILE" \
+    run --rm pipeline "$@"

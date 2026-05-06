@@ -50,13 +50,6 @@ When `WD_LANGS` is set and `SAVE_LABELS=true`, labels are saved once, then secon
   - `LastModified`
   - `DumpDate`
 
-## Prerequisites
-
-- Python `>=3.13`
-- `uv` installed
-- Running WikidataTextifier stack (`db`, `wikibase`, `wdtextifier`)
-- Local checkout of WikidataTextifier at `./WikidataTextifier` (for Python imports), or equivalent path mounted at `/opt/WikidataTextifier` in Docker
-
 ## Credentials and Token Files
 
 By default, `main.py` reads token/config files from `API_tokens/`:
@@ -69,8 +62,6 @@ By default, `main.py` reads token/config files from `API_tokens/`:
   - `{"REPO_ID": "...", "API_KEY": "..."}`
 - `API_tokens/vectors_hf_api.json`
   - `{"REPO_ID": "...", "API_KEY": "..."}`
-
-Do not commit real secrets.
 
 ## Environment Variables
 
@@ -129,6 +120,13 @@ When `WD_LANGS` is set, branch names are suffixed per language (`<branch>-en`, `
 | `DB_USER` | none | Textifier DB user |
 | `DB_PASS` | none | Textifier DB password |
 
+### Runner script variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `WDTEXTIFIER_REPO` | `https://github.com/wmde/WikidataTextifier.git` | WikidataTextifier Git repo to clone/update |
+| `WDTEXTIFIER_REF` | `main` | Branch/tag/commit checked out in `WikidataTextifier` |
+
 ## Local Run
 
 Install dependencies:
@@ -172,33 +170,44 @@ uv run python main.py
 
 ## Docker Run
 
-This repository includes a `pipeline` service in `docker-compose.yml` and expects WikidataTextifier services on a shared Docker network.
+`docker-compose.yml` in this repository is **pipeline-only**.
+It does not start `db` / `wikibase` / `wdtextifier` by itself.
 
-### Recommended helper script
+Use the helper script to run everything end-to-end:
 
-Use the helper script to:
-
-1. clone/update `wmde/WikidataTextifier`
-2. start `db`, `wikibase`, `wdtextifier`
-3. wait for readiness
-4. run this pipeline container
+1. clone/update `WikidataTextifier`
+2. checkout configured ref (`WDTEXTIFIER_REF`)
+3. start Textifier stack (`db`, `wikibase`, `wdtextifier`)
+4. wait for `wdtextifier` health
+5. run this repo's `pipeline` container on the same Docker network
 
 ```bash
 ./scripts/run_pipeline_with_wdtextifier.sh
 ```
 
-Optional env for script:
+### Manual (Without Script)
 
-- `WDTEXTIFIER_DIR` (default: `./WikidataTextifier`)
-- `WDTEXTIFIER_REPO` (default: `https://github.com/wmde/WikidataTextifier.git`)
-- `WDTEXTIFIER_REF` (default: `main`)
+If you want to run manually:
 
-### Direct compose run
-
-If the Textifier stack is already running and reachable on the configured network:
+1. Start Textifier stack:
 
 ```bash
-docker compose run --rm pipeline
+docker compose \
+  -p wikidatatextifier \
+  -f /path/to/WikidataTextEmbedding/WikidataTextifier/docker-compose.yml \
+  --env-file /path/to/WikidataTextEmbedding/.env \
+  up -d db wikibase wdtextifier
+```
+
+2. Run pipeline container:
+
+```bash
+WDTEXTIFIER_COMPOSE_NETWORK=wikidatatextifier_default \
+docker compose \
+  -p wikidatatextembedding-pipeline \
+  -f /path/to/WikidataTextEmbedding/docker-compose.yml \
+  --env-file /path/to/WikidataTextEmbedding/.env \
+  run --rm pipeline
 ```
 
 ## Output Artifacts
