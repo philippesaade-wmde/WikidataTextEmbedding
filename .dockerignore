@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+data
+WikidataTextifier
+notebooks
+docker
+
+API_tokens

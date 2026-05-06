@@ -1,148 +1,42 @@
 services:
-  data_processing_save_labels_descriptions:
+  pipeline:
     build:
       context: .
-      dockerfile: ./docker/1_Data_Processing_save_labels_descriptions/Dockerfile
-    volumes:
-      - ./data:/data  # Mount the ./data folder from the host to /data in the container
-    tty: true
-    container_name: data_processing_save_ids
+      dockerfile: Dockerfile
     environment:
-      PYTHONUNBUFFERED: 1
-      LANGUAGE: "de"
-      OFFSET: 0
-
-  data_processing_save_items_per_lang:
-    build:
-      context: .
-      dockerfile: ./docker/2_Data_Processing_save_items_per_lang/Dockerfile
+      WD_LANG: ${WD_LANG:-en}
+      FALLBACK_LANG: ${FALLBACK_LANG:-en}
+      WIKIBASE_HOST: ${WIKIBASE_HOST:-wikibase}
+      WIKIBASE_PORT: ${WIKIBASE_PORT:-80}
+      TEXTIFIER_DB_HOST: ${TEXTIFIER_DB_HOST:-db}
+      TEXTIFIER_DB_PORT: ${TEXTIFIER_DB_PORT:-3306}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME_LABEL:-label}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      SAVE_LABELS: ${SAVE_LABELS:-false}
+      SAVE_WD_TO_HF: ${SAVE_WD_TO_HF:-false}
+      SAVE_TO_VECTORDB: ${SAVE_TO_VECTORDB:-false}
+      SAVE_VECTORS_TO_HF: ${SAVE_VECTORS_TO_HF:-false}
+      FORCE_DOWNLOAD_DUMP: ${FORCE_DOWNLOAD_DUMP:-false}
+      DUMP_PATH: ${DUMP_PATH:-data/wd_dump.gz}
+      READER_QUEUE_SIZE: ${READER_QUEUE_SIZE:-128}
+      READER_BATCH_SIZE: ${READER_BATCH_SIZE:-16}
+      HF_CHUNK_SIZE: ${HF_CHUNK_SIZE:-10000}
+      JINA_API_PATH: /workspace/API_tokens/jina_api.json
+      ASTRA_API_PATH: /workspace/API_tokens/datastax_api.json
+      WD_HF_API_PATH: /workspace/API_tokens/wd_hf_api.json
+      VECTORS_HF_API_PATH: /workspace/API_tokens/vectors_hf_api.json
     volumes:
-      - ./data:/data  # Mount the ./data folder from the host to /data in the container
-    tty: true
-    container_name: data_processing_save_entities
-    environment:
-      PYTHONUNBUFFERED: 1
+      - ./data:/workspace/data
+      - ./API_tokens:/workspace/API_tokens:ro
+      - ./WikidataTextifier:/opt/WikidataTextifier:ro
+    restart: "no"
+    networks:
+      - wdtextifier
 
-  add_wikidata_to_db:
-    build:
-      context: .
-      dockerfile: ./docker/3_Add_Wikidata_to_DB/Dockerfile
-    volumes:
-      - ./data:/data
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    tty: true
-    container_name: add_wikidata_to_astra
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    environment:
-      PYTHONUNBUFFERED: 1
-      MODEL: "jina"
-      SAMPLE: "true"
-      API_KEY: "datastax_wikidata.json"
-      EMBED_BATCH_SIZE: 8
-      QUERY_BATCH_SIZE: 100
-      OFFSET: 0
-      COLLECTION_NAME: "wikidatav1"
-      LANGUAGE: 'en'
-      TEXTIFIER_LANGUAGE: 'en'
-      DB_PATH: 'sqlite_enwiki.db'
-    network_mode: "host"
-
-  run_retrieval:
-    build:
-      context: .
-      dockerfile: ./docker/4_Run_Retrieval/Dockerfile
-    volumes:
-      - ./data:/data
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    tty: true
-    container_name: run_retrieval
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-    environment:
-      PYTHONUNBUFFERED: 1
-      MODEL: "jina"
-      API_KEY: "datastax_wikidata.json"
-      COLLECTION_NAME: "wikidatav1"
-      BATCH_SIZE: 1
-      EVALUATION_PATH: "Mintaka/processed_dataframe.pkl"
-      # COMPARATIVE: "true"
-      # COMPARATIVE_COLS: "Correct QID,Wrong QID"
-      QUERY_COL: "Question"
-      QUERY_LANGUAGE: "en"
-      DB_LANGUAGE: "en"
-      PREFIX: ""
-    network_mode: "host"
-
-  run_rerank:
-    build:
-      context: .
-      dockerfile: ./docker/5_Run_Rerank/Dockerfile
-    volumes:
-      - ./data:/data
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    tty: true
-    container_name: run_rank
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-    environment:
-      PYTHONUNBUFFERED: 1
-      MODEL: "jina"
-      RETRIEVAL_FILENAME: "retrieval_results_Mintaka-wikidata_test_v1-en"
-      BATCH_SIZE: 1
-      QUERY_COL: "Question"
-      LANGUAGE: "de"
-    network_mode: "host"
-
-  push_huggingface:
-    build:
-      context: .
-      dockerfile: ./docker/6_Push_Huggingface/Dockerfile
-    volumes:
-      - ./data:/data
-    tty: true
-    container_name: push_huggingface
-    environment:
-      PYTHONUNBUFFERED: 1
-      QUEUE_SIZE: 5000
-      NUM_PROCESSES: 4
-      SKIPLINES: 0
-      ITERATION: 36
-
-  create_prototype:
-      build:
-        context: .
-        dockerfile: ./docker/7_Create_Prototype/Dockerfile
-      volumes:
-        - ./data:/data
-        - ~/.cache/huggingface:/root/.cache/huggingface
-      tty: true
-      container_name: create_prototype
-      environment:
-        PYTHONUNBUFFERED: 1
-        MODEL: "jinaapi"
-        API_KEY: "datastax_wikidata.json"
-        EMBED_BATCH_SIZE: 10
-        NUM_PROCESSES: 23
-        OFFSET: 0
-        COLLECTION_NAME: "wikidata_prototype"
-        LANGUAGE: 'en'
-        TEXTIFIER_LANGUAGE: 'en'
-      network_mode: "host"
+networks:
+  wdtextifier:
+    external: true
+    name: ${WDTEXTIFIER_COMPOSE_NETWORK:-wikidatatextifier_default}

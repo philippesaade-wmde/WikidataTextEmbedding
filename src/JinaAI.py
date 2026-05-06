@@ -2,15 +2,29 @@ import json
 import requests
 import numpy as np
 import base64
+import os
 from typing import List
 
+
+class JinaAITokenizer:
+    def __init__(self):
+        from transformers import AutoTokenizer
+
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            "jinaai/jina-embeddings-v3",
+            trust_remote_code=True
+        )
+
+    def __call__(self, *args, **kwargs):
+        """Forward calls to the wrapped tokenizer."""
+        return self.tokenizer(*args, **kwargs)
 
 class JinaAIEmbedder:
     def __init__(
             self, passage_task="retrieval.passage",
             query_task="retrieval.query", embedding_dim=1024, device='cuda'):
         """
-        Initializes the JinaAIEmbedder class with the model, tokenizer,
+        Initializes the JinaAIEmbedder class with the model,
         and task identifiers.
 
         Parameters:
@@ -20,10 +34,8 @@ class JinaAIEmbedder:
             Defaults to "retrieval.query".
         - embedding_dim (int): Dimensionality of the embeddings.
             Defaults to 1024.
-        - api_key_path (str): Path to the JSON file containing the
-            Jina API key. Defaults to "../API_tokens/jina_api.json".
         """
-        from transformers import AutoModel, AutoTokenizer
+        from transformers import AutoModel
         import torch
 
         self.torch = torch
@@ -36,10 +48,6 @@ class JinaAIEmbedder:
             "jinaai/jina-embeddings-v3",
             trust_remote_code=True
         ).to(device)
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            "jinaai/jina-embeddings-v3",
-            trust_remote_code=True
-        )
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
@@ -80,12 +88,19 @@ class JinaAIEmbedder:
             )[0]
             return embedding.tolist()
 
+    def __call__(self, text: str, task: str) -> List[float]:
+        if task == self.query_task:
+            return self.embed_query(text)
+        elif task == self.passage_task:
+            return self.embed_documents([text])[0]
+        else:
+            raise ValueError("Invalid task specified")
 
 class JinaAIAPIEmbedder:
     def __init__(
             self, passage_task="retrieval.passage",
             query_task="retrieval.query", embedding_dim=1024,
-            api_key_path="../API_tokens/jina_api.json"):
+            config_path: str = "../API_tokens/jina_api.json"):
         """
         Initializes the JinaAIEmbedder class with the model, tokenizer,
         and task identifiers.
@@ -97,14 +112,21 @@ class JinaAIAPIEmbedder:
             Defaults to "retrieval.query".
         - embedding_dim (int): Dimensionality of the embeddings.
             Defaults to 1024.
-        - api_key_path (str): Path to the JSON file containing
+        - config_path (str): Path to the JSON file containing
             the Jina API key. Defaults to "../API_tokens/jina_api.json".
         """
         self.passage_task = passage_task
         self.query_task = query_task
         self.embedding_dim = embedding_dim
 
-        self.api_key = json.load(open(api_key_path, 'r+'))['API_KEY']
+        self.api_key = os.environ.get("JINA_API_KEY")
+        if config_path and os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f_in:
+                data = json.load(f_in)
+                self.api_key = data.get("API_KEY", self.api_key)
+
+        if not self.api_key:
+            raise ValueError("Jina API key not found.")
 
     def api_embed(self, texts, task="retrieval.query"):
         """
@@ -179,6 +201,9 @@ class JinaAIAPIEmbedder:
         embeddings = self.api_embed([text], task=self.query_task)
         return embeddings[0]
 
+    def __call__(self, text: str, task: str) -> List[float]:
+        return self.api_embed([text], task=task)[0]
+
 
 class JinaAIReranker:
     def __init__(self, max_tokens=1024, device='cuda'):
@@ -193,7 +218,7 @@ class JinaAIReranker:
         Raises:
         - ValueError: If max_tokens is greater than 1024.
         """
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        from transformers import AutoModelForSequenceClassification
         import torch
 
         self.torch = torch
@@ -206,11 +231,6 @@ class JinaAIReranker:
             'jinaai/jina-reranker-v2-base-multilingual',
             trust_remote_code=True
         ).to(device)
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            "jinaai/jina-embeddings-v3",
-            trust_remote_code=True
-        )
 
     def rank(self, query: str, texts: List[str]) -> List[float]:
         """
@@ -231,3 +251,6 @@ class JinaAIReranker:
                 sentence_pairs,
                 max_length=self.max_tokens
             )
+
+    def __call__(self, query: str, texts: List[str]) -> List[float]:
+        return self.rank(query, texts)

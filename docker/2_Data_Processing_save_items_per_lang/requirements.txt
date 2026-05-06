@@ -1,7 +1,0 @@
-tqdm
-psutil
-orjson
-pandas
-
-# wikidataDB
-sqlalchemy
