@@ -2,19 +2,17 @@ import json
 import os
 import traceback
 import tempfile
-import shutil
-import gc
 from time import sleep
 from multiprocessing import Process, Queue, Value, Lock
 from queue import Full
-from datasets import Dataset
 from huggingface_hub import HfApi, CommitOperationDelete
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
 class WikidataHFDatasetPublisher:
     """
-    Publish JSON-like records to a Hugging Face dataset repo in chunked splits
-    using `Dataset.from_generator(...).push_to_hub(...)`.
+    Publish JSON-like records to a Hugging Face dataset repo in chunked parquet files.
 
     Designed for use inside `WikidataDumpReader.run(..., handler_receives_batch=True)`,
     while keeping local storage usage bounded.
@@ -24,11 +22,13 @@ class WikidataHFDatasetPublisher:
         self,
         branch: str,
         config_path: str = None,
-        chunk_size: int = 10_000,
+        storage_chunk_size: int = 1000,
+        memory_chunk_size: int = 20,
         queue_size: int = 128,
         data_dir: str | None = 'data',
     ):
-        self.chunk_size = max(1, int(chunk_size))
+        self.storage_chunk_size = max(1, int(storage_chunk_size))
+        self.memory_chunk_size = max(1, int(memory_chunk_size))
         self.closed = Value('i', 0)
         self.write_lock = Lock()
         self.queue = Queue(maxsize=max(1, int(queue_size)))
@@ -82,27 +82,30 @@ class WikidataHFDatasetPublisher:
         return True
 
     def _publish_records(self):
+        api = HfApi(token=self.token)
         while True:
-            cache_dir = tempfile.mkdtemp(prefix="hf_gen_cache_")
-            dataset = None
+            chunk_fd, chunk_path = tempfile.mkstemp(prefix="hf_chunk_", suffix=".parquet")
+            os.close(chunk_fd)
+
+            num_records = 0
+            reached_end = False
             try:
-                dataset = Dataset.from_generator(
-                    self._uploader_loop,
-                    cache_dir=cache_dir,
-                    keep_in_memory=False
-                )
+                num_records, reached_end = self._write_chunk_parquet(chunk_path)
 
-                if dataset.num_rows == 0:
-                    break
+                if num_records == 0:
+                    if reached_end:
+                        break
+                    continue
 
-                split_name = f"chunk_{self.chunk_idx}"
+                remote_base = (self.data_dir or "data").rstrip("/")
+                remote_file = f"{remote_base}/chunk_{self.chunk_idx}.parquet"
                 while True:
                     try:
-                        dataset.push_to_hub(
-                            self.repo_id,
-                            split=split_name,
-                            data_dir=self.data_dir,
-                            token=self.token,
+                        api.upload_file(
+                            path_or_fileobj=chunk_path,
+                            path_in_repo=remote_file,
+                            repo_id=self.repo_id,
+                            repo_type="dataset",
                             revision=self.branch,
                         )
                         break
@@ -113,31 +116,67 @@ class WikidataHFDatasetPublisher:
                 self.chunk_idx += 1
             except Exception:
                 traceback.print_exc()
-                sleep(1)
+                raise
             finally:
-                # Ensure temporary Arrow/cache files are removed after each chunk attempt.
-                del dataset
-                gc.collect()
-                shutil.rmtree(cache_dir, ignore_errors=True)
+                try:
+                    os.remove(chunk_path)
+                except FileNotFoundError:
+                    pass
 
-    def _uploader_loop(self):
+            if reached_end:
+                break
+
+    def _write_chunk_parquet(self, chunk_path: str) -> tuple[int, bool]:
         num_records = 0
-        while True:
-            row = self.queue.get()
-            if row is None:
-                # If chunk is not empty, preserve sentinel for next pass
-                if num_records > 0:
-                    self.queue.put(None)
-                break
+        reached_end = False
+        writer = None
+        batch_rows = []
+        schema = None
 
-            if not row:
-                continue
+        try:
+            while num_records < self.storage_chunk_size:
+                row = self.queue.get()
 
-            yield row
+                if row is None:
+                    reached_end = True
+                    # Preserve sentinel for the next chunk pass if this chunk already has rows.
+                    if num_records > 0:
+                        self.queue.put(None)
+                    break
 
-            num_records += 1
-            if num_records >= self.chunk_size:
-                break
+                if not row:
+                    continue
+
+                batch_rows.append(row)
+                num_records += 1
+                if len(batch_rows) >= self.memory_chunk_size:
+                    table = pa.Table.from_pylist(batch_rows, schema=schema)
+                    if writer is None:
+                        schema = table.schema
+                        writer = pq.ParquetWriter(
+                            chunk_path,
+                            schema,
+                            compression='zstd',
+                        )
+                    writer.write_table(table)
+                    batch_rows.clear()
+
+            if batch_rows:
+                table = pa.Table.from_pylist(batch_rows, schema=schema)
+                if writer is None:
+                    schema = table.schema
+                    writer = pq.ParquetWriter(
+                        chunk_path,
+                        schema,
+                        compression='zstd',
+                    )
+                writer.write_table(table)
+                batch_rows.clear()
+        finally:
+            if writer is not None:
+                writer.close()
+
+        return num_records, reached_end
 
     def flush(self) -> int:
         """
@@ -213,11 +252,11 @@ class WikidataHFDatasetPublisher:
         """
         rows = []
         for vector in vectors:
-            if vector:
+            if vector and vector.get("vector") is not None:
                 rows.append({
-                    "id": vector.get("id"),
+                    "id": vector.get("id") or "",
                     "vector": vector.get("vector"),
-                    "lang": vector.get("lang"),
-                    "wdid": vector.get("wdid"),
+                    "lang": vector.get("lang") or "",
+                    "wdid": vector.get("wdid") or "",
                 })
         return self.add_records(rows)

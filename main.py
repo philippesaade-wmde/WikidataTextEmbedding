@@ -23,7 +23,7 @@ JINA_API_PATH = os.environ.get("JINA_API_PATH", "./API_tokens/jina_api.json")
 ASTRA_API_PATH = os.environ.get("ASTRA_API_PATH", "./API_tokens/datastax_api.json")
 WD_HF_API_PATH = os.environ.get("WD_HF_API_PATH", "./API_tokens/wd_hf_api.json")
 VECTORS_HF_API_PATH = os.environ.get("VECTORS_HF_API_PATH", "./API_tokens/vectors_hf_api.json")
-HF_CHUNK_SIZE = int(os.environ.get("HF_CHUNK_SIZE", 10000))
+HF_CHUNK_SIZE = int(os.environ.get("HF_CHUNK_SIZE", 1000))
 DUMP_DATE = os.environ.get("DUMP_DATE", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
 HF_BRANCH = os.environ.get("HF_BRANCH", datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S"))
 VECTOR_HF_BRANCH = os.environ.get("VECTOR_HF_BRANCH", HF_BRANCH)
@@ -284,7 +284,8 @@ def run_pipeline(
         HF_PUBLISHER = WikidataHFDatasetPublisher(
             branch=HF_BRANCH,
             config_path=WD_HF_API_PATH,
-            chunk_size=HF_CHUNK_SIZE
+            storage_chunk_size=HF_CHUNK_SIZE,
+            memory_chunk_size=10
         )
 
     if run_first_pass_labels:
@@ -308,7 +309,8 @@ def run_pipeline(
         HF_PUBLISHER = WikidataHFDatasetPublisher(
             branch=VECTOR_HF_BRANCH,
             config_path=VECTORS_HF_API_PATH,
-            chunk_size=HF_CHUNK_SIZE,
+            storage_chunk_size=HF_CHUNK_SIZE,
+            memory_chunk_size=50,
             data_dir=f"data/{LANG}",
         )
 
