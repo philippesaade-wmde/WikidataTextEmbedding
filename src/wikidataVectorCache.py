@@ -5,6 +5,7 @@ from sqlalchemy.types import TypeDecorator
 import base64
 import numpy as np
 from datetime import datetime
+from src.utils import normalize_last_updated
 
 """
 SQLite database setup for logging pushed Wikidata IDs.
@@ -53,6 +54,9 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
             """
             with Session() as session:
                 try:
+                    for row in data:
+                        row["last_updated"] = normalize_last_updated(row.get("last_updated"))
+
                     session.execute(
                         text("INSERT INTO vectors (id, vector, lang, wdid, last_updated) VALUES (:id, :vector, :lang, :wdid, :last_updated) ON CONFLICT(id) DO UPDATE SET vector = EXCLUDED.vector, lang = EXCLUDED.lang, wdid = EXCLUDED.wdid, last_updated = EXCLUDED.last_updated"),
                         data
@@ -80,11 +84,8 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
                         if not existing:
                             to_create.append(d)
                         else:
-                            modified_dt = datetime.fromisoformat(
-                                d.get('modified').removesuffix('Z')
-                            )
-
-                            last_updated = existing.last_updated.replace(tzinfo=None)
+                            modified_dt = normalize_last_updated(d.get("modified"))
+                            last_updated = normalize_last_updated(existing.last_updated)
 
                             if last_updated < modified_dt:
                                 to_update.append(d)

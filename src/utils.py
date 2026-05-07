@@ -2,6 +2,7 @@
 from copy import copy
 import os
 import socket
+from datetime import datetime, timezone
 
 def check_wdtextifier_stack():
     WIKIBASE_HOST = os.environ.get("WIKIBASE_HOST", "wikibase")
@@ -26,6 +27,30 @@ def check_wdtextifier_stack():
             pass
     except OSError as e:
         raise RuntimeError("Cannot reach WD Textifier's Label Database.") from e
+
+
+def normalize_last_updated(value):
+    """Normalize timestamps to naive UTC datetime."""
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        raw = value.strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(raw)
+        except ValueError:
+            try:
+                dt = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                dt = datetime.now(timezone.utc)
+    else:
+        dt = datetime.now(timezone.utc)
+
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+    return dt
 
 
 def _to_text_with_claims(entity, claims, lang):

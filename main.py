@@ -1,19 +1,27 @@
+from datetime import datetime, timezone
+import os
+
+from WikidataTextifier.src import JSONNormalizer, LazyLabelFactory, WikidataLabel
+
+from src.JinaAI import JinaAIAPIEmbedder, JinaAITokenizer
 from src.WikidataDumpReader import WikidataDumpReader
-from src.WikidataFilter import WikidataPropertyFilter, WikidataItemFilter
+from src.WikidataFilter import WikidataItemFilter, WikidataPropertyFilter
 from src.WikidataJSONCleaner import WikidataJSONCleaner
-from src.utils import chunk_item_text, extract_instanceof, extract_pids, check_wdtextifier_stack
-from src.JinaAI import JinaAITokenizer, JinaAIAPIEmbedder
+from src.utils import (
+    check_wdtextifier_stack,
+    chunk_item_text,
+    extract_instanceof,
+    extract_pids,
+)
+from src.wikidataHuggingFace import WikidataHFDatasetPublisher
 from src.wikidataVectorCache import WikidataVectorCache
 from src.wikidataVectorDB import AstraDBConnect
-from src.wikidataHuggingFace import WikidataHFDatasetPublisher
 
-from WikidataTextifier.src import WikidataLabel, LazyLabelFactory, JSONNormalizer
 
-import os
-from datetime import datetime, timezone
-
+# ---- Runtime config ----
 READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 128))
 READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", 16))
+NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
 LANG = os.environ.get("WD_LANG", os.environ.get("LANG", "en"))
 FALLBACK_LANG = os.environ.get("FALLBACK_LANG", LANG)
@@ -38,6 +46,8 @@ SAVE_TO_VECTORDB = os.environ.get("SAVE_TO_VECTORDB", "false").lower() == "true"
 SAVE_LABELS = os.environ.get("SAVE_LABELS", "false").lower() == "true"
 FORCE_DOWNLOAD_DUMP = os.environ.get("FORCE_DOWNLOAD_DUMP", "false").lower() == "true"
 
+
+# ---- Process-local runtime state ----
 TEXT_PROPERTY_FILTER = None
 TEXT_TOKENIZER = None
 VECTOR_ITEM_FILTER = None
@@ -45,46 +55,26 @@ VECTOR_EMBEDDER = None
 VECTORCACHE = None
 ASTRADB = None
 HF_PUBLISHER = None
-
-NEEDS_DUMP_READER = SAVE_LABELS or SAVE_WD_TO_HF or SAVE_TO_VECTORDB
-
-dump_reader = None
 LABEL_DB_READY = False
+dump_reader = None
 
 
-'''
-Step 2: Read the dump and save labels of all entities
-'''
-
+# ---- Transformation steps ----
 def save_labels(items):
-    data = {
-        item["id"]: {"labels": item["labels"]}
-        for item in items
-    }
+    data = {item["id"]: {"labels": item["labels"]} for item in items}
     if not data:
         return
     compressed = WikidataLabel._compress_labels(data)
-    WikidataLabel.add_bulk_labels(
-        [{"id": qid, "labels": labels} for qid, labels in compressed.items()]
-    )
+    WikidataLabel.add_bulk_labels([{"id": qid, "labels": labels} for qid, labels in compressed.items()])
 
-'''
-Step 3: Read the dump and prepare for text embedding
-'''
 
 def item_to_json(item, label_factory=None):
     if label_factory is None:
         label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
 
-    # Preparation for HuggingFace
-    clean_json = WikidataJSONCleaner.clean_entity(
-        item,
-        label_factory.create
-    )
-
+    clean_json = WikidataJSONCleaner.clean_entity(item, label_factory.create)
     label_factory.resolve_all()
-    clean_json = label_factory.resolve_labels_in_json(clean_json)
-    return clean_json
+    return label_factory.resolve_labels_in_json(clean_json)
 
 
 def item_to_text(item, label_factory=None):
@@ -93,50 +83,38 @@ def item_to_text(item, label_factory=None):
     if label_factory is None:
         label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
 
-    last_modified = item['modified']
+    last_modified = item.get("modified")
 
-    # Preparation for text embedding
     normalizer = JSONNormalizer(
-        item['id'],
+        item["id"],
         item,
         lang=LANG,
         fallback_lang=FALLBACK_LANG,
-        label_factory=label_factory
+        label_factory=label_factory,
     )
-
     item = normalizer.normalize(
         external_ids=False,
         references=False,
         all_ranks=False,
-        qualifiers=True
+        qualifiers=True,
     )
 
-    # Sort and filter claims based on the property classification
     if TEXT_PROPERTY_FILTER is None:
         TEXT_PROPERTY_FILTER = WikidataPropertyFilter()
     drop_claim_pids = PROPERTY_CONSTRAINT_PIDS if item.id.startswith("P") else ()
-    item = TEXT_PROPERTY_FILTER.sort_and_filter_textifier(
-        item,
-        drop_claim_pids=drop_claim_pids,
-    )
+    item = TEXT_PROPERTY_FILTER.sort_and_filter_textifier(item, drop_claim_pids=drop_claim_pids)
 
-    # Resolve pending lazy labels once before repeated to_text() calls in chunking.
     label_factory.resolve_all()
 
     if TEXT_TOKENIZER is None:
         TEXT_TOKENIZER = JinaAITokenizer()
-    chunks = chunk_item_text(
-        item,
-        TEXT_TOKENIZER,
-        max_length=1024,
-        lang=LANG
-    )
+    chunks = chunk_item_text(item, TEXT_TOKENIZER, max_length=1024, lang=LANG)
 
     return [
         {
-            '_id': f"{item.id}_{LANG}_{i+1}",
-            'content': chunk,
-            'metadata': {
+            "_id": f"{item.id}_{LANG}_{i + 1}",
+            "content": chunk,
+            "metadata": {
                 "Label": item.label,
                 "Description": item.description,
                 "QID" if item.id.startswith("Q") else "PID": item.id,
@@ -146,28 +124,29 @@ def item_to_text(item, label_factory=None):
                 "Properties": extract_pids(item),
                 "LastModified": last_modified,
                 "DumpDate": DUMP_DATE,
-            }
+            },
         }
         for i, chunk in enumerate(chunks)
     ]
 
+
+# ---- Sink steps ----
 def push_to_hf(items, label_factory=None):
     if HF_PUBLISHER is None:
-        raise RuntimeError(
-            "HF publisher is not initialized in this process."
-        )
+        raise RuntimeError("HF publisher is not initialized in this process.")
 
     if label_factory is None:
         label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
-    items = [
-        item_to_json(item, label_factory=label_factory) for item in items
-    ]
 
-    HF_PUBLISHER.publish_wd_batch(items)
-    return len(items)
+    rows = [item_to_json(item, label_factory=label_factory) for item in items]
+    HF_PUBLISHER.publish_wd_batch(rows)
+    return len(rows)
 
 
 def save_vectors_to_hf():
+    if HF_PUBLISHER is None:
+        raise RuntimeError("HF publisher is not initialized in this process.")
+
     vector_cache = WikidataVectorCache(lang=LANG, data_dir="./data/Wikidata/")
     total = 0
     for vectors in vector_cache.iter_batches(batch_size=HF_CHUNK_SIZE):
@@ -175,164 +154,148 @@ def save_vectors_to_hf():
     return total
 
 
-def init_vector_worker():
-    """
-    Initialize process-local clients once per consumer process.
-    """
-    global VECTORCACHE, ASTRADB
-    global VECTOR_ITEM_FILTER, VECTOR_EMBEDDER
-
-    VECTOR_ITEM_FILTER = WikidataItemFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
-    VECTOR_EMBEDDER = JinaAIAPIEmbedder(config_path=JINA_API_PATH)
-    VECTORCACHE = WikidataVectorCache(lang=LANG, data_dir="./data/Wikidata/")
-    ASTRADB = AstraDBConnect(lang=LANG, config_path=ASTRA_API_PATH)
-
-
-def init_label_worker():
-    """Initialize label DB client inside each forked consumer process."""
-    global LABEL_DB_READY
-    if not LABEL_DB_READY:
-        WikidataLabel.initialize_database()
-        LABEL_DB_READY = True
-
-
-def init_second_pass_worker():
-    """Initialize all second-pass process-local dependencies."""
-    init_label_worker()
-    if SAVE_TO_VECTORDB:
-        init_vector_worker()
-
-
 def push_to_vectorDB(items, label_factory=None):
     global VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB
     if any(x is None for x in (VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB)):
-        init_vector_worker()
+        init_worker(enable_vector=True)
 
-    # Filter items for embedding
-    items = [
-        item for item in items \
-            if VECTOR_ITEM_FILTER.filter(item)
-    ]
-
-    # Split between items to create or to update
+    items = [item for item in items if VECTOR_ITEM_FILTER.filter(item)]
     to_update, to_create = VECTORCACHE.filter_for_update(items)
 
     if label_factory is None:
         label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
+
     to_update_docs = []
     for item in to_update:
-        item_chunks = item_to_text(item, label_factory=label_factory)
-        to_update_docs.extend(item_chunks)
+        to_update_docs.extend(item_to_text(item, label_factory=label_factory))
 
     to_create_docs = []
     for item in to_create:
-        item_chunks = item_to_text(item, label_factory=label_factory)
-        to_create_docs.extend(item_chunks)
+        to_create_docs.extend(item_to_text(item, label_factory=label_factory))
 
-    # Vectorize updates + creates together in one batch call
     all_docs = to_update_docs + to_create_docs
     if not all_docs:
         return 0
 
-    vectors = VECTOR_EMBEDDER.embed_documents(
-        [doc["content"] for doc in all_docs]
-    )
-
+    vectors = VECTOR_EMBEDDER.embed_documents([doc["content"] for doc in all_docs])
     for doc, vector in zip(all_docs, vectors):
         doc["$vector"] = vector
 
     created_ids = ASTRADB.create_documents(to_create_docs)
-
-    not_created_docs = [doc for doc in to_create_docs \
-        if doc['_id'] not in created_ids]
+    not_created_docs = [doc for doc in to_create_docs if doc["_id"] not in created_ids]
     to_update_docs.extend(not_created_docs)
     updated_ids = ASTRADB.update_documents(to_update_docs)
     all_ids = set(created_ids) | set(updated_ids)
 
-    # Cache docs
-    to_cache = [doc for doc in all_docs \
-        if doc['_id'] in all_ids]
+    to_cache = [doc for doc in all_docs if doc["_id"] in all_ids]
     VECTORCACHE.add_astra_doc(to_cache)
-
     return len(all_ids)
 
 
-def process_label_batch(items):
-    save_labels(items)
+# ---- Worker and batch handlers ----
+def init_worker(enable_vector=False):
+    global LABEL_DB_READY
+    global VECTORCACHE, ASTRADB
+    global VECTOR_ITEM_FILTER, VECTOR_EMBEDDER
+
+    if not LABEL_DB_READY:
+        WikidataLabel.initialize_database()
+        LABEL_DB_READY = True
+
+    if enable_vector and any(x is None for x in (VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB)):
+        VECTOR_ITEM_FILTER = WikidataItemFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
+        VECTOR_EMBEDDER = JinaAIAPIEmbedder(config_path=JINA_API_PATH)
+        VECTORCACHE = WikidataVectorCache(lang=LANG, data_dir="./data/Wikidata/")
+        ASTRADB = AstraDBConnect(lang=LANG, config_path=ASTRA_API_PATH)
 
 
-def process_second_pass_batch(items):
+def process_processing_pass_batch(items):
     label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
 
     if SAVE_WD_TO_HF:
         push_to_hf(items, label_factory=label_factory)
-
     if SAVE_TO_VECTORDB:
         push_to_vectorDB(items, label_factory=label_factory)
 
 
+# ---- Pipeline passes ----
+def run_label_pass(reader):
+    reader.run(
+        save_labels,
+        handler_receives_batch=True,
+        init_consumer=init_worker,
+        init_consumer_args=(False,),
+    )
+
+
+def run_processing_pass_batches(reader):
+    try:
+        reader.run(
+            process_processing_pass_batch,
+            handler_receives_batch=True,
+            init_consumer=init_worker,
+            init_consumer_args=(SAVE_TO_VECTORDB,),
+        )
+    finally:
+        if SAVE_WD_TO_HF and HF_PUBLISHER is not None:
+            HF_PUBLISHER.flush()
+
+
+def run_vector_cache_to_hf_pass():
+    global HF_PUBLISHER
+    HF_PUBLISHER = WikidataHFDatasetPublisher(
+        branch=VECTOR_HF_BRANCH,
+        config_path=VECTORS_HF_API_PATH,
+        storage_chunk_size=HF_CHUNK_SIZE,
+        memory_chunk_size=HF_BATCH_SIZE,
+        data_dir=f"data/{LANG}",
+    )
+    try:
+        save_vectors_to_hf()
+    finally:
+        HF_PUBLISHER.flush()
+
+
+# ---- Orchestration ----
 def run_pipeline(
     run_first_pass_labels=SAVE_LABELS,
-    run_second_pass_processing=(SAVE_WD_TO_HF or SAVE_TO_VECTORDB),
+    run_processing_pass_enabled=(SAVE_WD_TO_HF or SAVE_TO_VECTORDB),
     run_vectors_to_hf=SAVE_VECTORS_TO_HF,
 ):
     global dump_reader, HF_PUBLISHER
 
-    needs_dump_reader = run_first_pass_labels or run_second_pass_processing
-    if needs_dump_reader:
+    if not (run_first_pass_labels or run_processing_pass_enabled):
+        dump_reader = None
+    else:
         check_wdtextifier_stack()
         dump_reader = WikidataDumpReader(
             DUMP_PATH,
+            num_processes=NUM_PROCESSES,
             queue_size=READER_QUEUE_SIZE,
             batch_size=READER_BATCH_SIZE,
         )
 
-        # Step 1: Download the latest Wikidata dump
         if FORCE_DOWNLOAD_DUMP or (not os.path.exists(DUMP_PATH)):
             print(f"File {DUMP_PATH} does not exist. Downloading...")
             dump_reader.download()
-    else:
-        dump_reader = None
 
-    if run_second_pass_processing and SAVE_WD_TO_HF:
+    if run_processing_pass_enabled and SAVE_WD_TO_HF:
         HF_PUBLISHER = WikidataHFDatasetPublisher(
             branch=HF_BRANCH,
             config_path=WD_HF_API_PATH,
-            storage_chunk_size=HF_CHUNK_SIZE,
-            memory_chunk_size=HF_BATCH_SIZE
-        )
-
-    if run_first_pass_labels:
-        dump_reader.run(
-            process_label_batch,
-            handler_receives_batch=True,
-            init_consumer=init_label_worker,
-        )
-
-    if run_second_pass_processing:
-        try:
-            dump_reader.run(
-                process_second_pass_batch,
-                handler_receives_batch=True,
-                init_consumer=init_second_pass_worker,
-            )
-        finally:
-            if SAVE_WD_TO_HF and HF_PUBLISHER is not None:
-                HF_PUBLISHER.flush()
-
-    if run_vectors_to_hf:
-        HF_PUBLISHER = WikidataHFDatasetPublisher(
-            branch=VECTOR_HF_BRANCH,
-            config_path=VECTORS_HF_API_PATH,
             storage_chunk_size=HF_CHUNK_SIZE,
             memory_chunk_size=HF_BATCH_SIZE,
             data_dir=f"data/{LANG}",
         )
 
-        try:
-            save_vectors_to_hf()
-        finally:
-            HF_PUBLISHER.flush()
+    if run_first_pass_labels and dump_reader is not None:
+        run_label_pass(dump_reader)
+
+    if run_processing_pass_enabled and dump_reader is not None:
+        run_processing_pass_batches(dump_reader)
+
+    if run_vectors_to_hf:
+        run_vector_cache_to_hf_pass()
 
 
 def reset_runtime_state():
@@ -358,11 +321,11 @@ def run_pipeline_all_languages():
         return
 
     if SAVE_LABELS:
-        print("Running shared label pass once before per-language second passes")
+        print("Running shared label pass once before per-language processing passes")
         reset_runtime_state()
         run_pipeline(
             run_first_pass_labels=True,
-            run_second_pass_processing=False,
+            run_processing_pass_enabled=False,
             run_vectors_to_hf=False,
         )
 
@@ -379,7 +342,7 @@ def run_pipeline_all_languages():
         reset_runtime_state()
         run_pipeline(
             run_first_pass_labels=False,
-            run_second_pass_processing=(SAVE_WD_TO_HF or SAVE_TO_VECTORDB),
+            run_processing_pass_enabled=(SAVE_WD_TO_HF or SAVE_TO_VECTORDB),
             run_vectors_to_hf=SAVE_VECTORS_TO_HF,
         )
 
