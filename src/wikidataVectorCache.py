@@ -74,18 +74,26 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
             with Session() as session:
                 try:
                     ids = [f"{d['id']}_{lang}_1" for d in data]
-                    existing_vectors = session.query(VectorCache).filter(VectorCache.id.in_(ids)).all()
-                    existing_dict = {v.wdid: v for v in existing_vectors}
+                    existing_rows = (
+                        session.query(VectorCache.wdid, VectorCache.last_updated)
+                        .filter(VectorCache.id.in_(ids))
+                        .all()
+                    )
+                    existing_dict = {
+                        wdid: last_updated
+                        for wdid, last_updated in existing_rows
+                        if wdid
+                    }
 
                     to_update = []
                     to_create = []
                     for d in data:
-                        existing = existing_dict.get(d['id'])
-                        if not existing:
+                        existing_last_updated = existing_dict.get(d['id'])
+                        if not existing_last_updated:
                             to_create.append(d)
                         else:
                             modified_dt = normalize_last_updated(d.get("modified"))
-                            last_updated = normalize_last_updated(existing.last_updated)
+                            last_updated = normalize_last_updated(existing_last_updated)
 
                             if last_updated < modified_dt:
                                 to_update.append(d)

@@ -213,20 +213,23 @@ class WikidataHFDatasetPublisher:
         if not records:
             return 0
 
-        with self.write_lock:
+        with self.closed.get_lock():
             if self.closed.value == 1:
                 raise RuntimeError("Cannot add records after flush has started.")
 
-            for record in records:
-                if record:
-                    while True:
-                        try:
-                            self.queue.put(record, timeout=1)
-                            break
-                        except Full:
-                            continue
+        valid_records = [record for record in records if record]
+        for record in valid_records:
+            while True:
+                try:
+                    self.queue.put(record, timeout=1)
+                    break
+                except Full:
+                    with self.closed.get_lock():
+                        if self.closed.value == 1:
+                            raise RuntimeError("Cannot add records after flush has started.")
+                    continue
 
-        return len(records)
+        return len(valid_records)
 
     def publish_wd_batch(self, items: list[dict]) -> int:
         """

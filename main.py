@@ -33,6 +33,7 @@ WD_HF_API_PATH = os.environ.get("WD_HF_API_PATH", "./API_tokens/wd_hf_api.json")
 VECTORS_HF_API_PATH = os.environ.get("VECTORS_HF_API_PATH", "./API_tokens/vectors_hf_api.json")
 HF_CHUNK_SIZE = int(os.environ.get("HF_CHUNK_SIZE", 1000))
 HF_BATCH_SIZE = int(os.environ.get("HF_BATCH_SIZE", 32))
+HF_QUEUE_SIZE = int(os.environ.get("HF_QUEUE_SIZE", 128))
 DUMP_DATE = os.environ.get("DUMP_DATE", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
 HF_BRANCH = os.environ.get("HF_BRANCH", datetime.now(timezone.utc).strftime("%Y%m%d"))
 VECTOR_HF_BRANCH = os.environ.get("VECTOR_HF_BRANCH", HF_BRANCH)
@@ -248,6 +249,7 @@ def run_vector_cache_to_hf_pass():
         config_path=VECTORS_HF_API_PATH,
         storage_chunk_size=HF_CHUNK_SIZE,
         memory_chunk_size=HF_BATCH_SIZE,
+        queue_size=HF_QUEUE_SIZE,
         data_dir=f"data/{LANG}",
     )
     try:
@@ -285,6 +287,7 @@ def run_pipeline(
             config_path=WD_HF_API_PATH,
             storage_chunk_size=HF_CHUNK_SIZE,
             memory_chunk_size=HF_BATCH_SIZE,
+            queue_size=HF_QUEUE_SIZE,
             data_dir=f"data/{LANG}",
         )
 
