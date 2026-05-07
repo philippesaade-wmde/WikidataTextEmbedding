@@ -150,6 +150,11 @@ def item_to_text(item, label_factory=None):
     ]
 
 def push_to_hf(items, label_factory=None):
+    if HF_PUBLISHER is None:
+        raise RuntimeError(
+            "HF publisher is not initialized in this process."
+        )
+
     if label_factory is None:
         label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
     items = [
@@ -262,7 +267,7 @@ def run_pipeline(
         dump_reader = WikidataDumpReader(
             DUMP_PATH,
             queue_size=READER_QUEUE_SIZE,
-            batch_size=READER_BATCH_SIZE
+            batch_size=READER_BATCH_SIZE,
         )
 
         # Step 1: Download the latest Wikidata dump

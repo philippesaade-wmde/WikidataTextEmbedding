@@ -11,8 +11,7 @@ from queue import Full
 class WikidataDumpReader:
     def __init__(
             self, file_path, num_processes=None,
-            queue_size=100, skiplines=0, batch_size=100,
-            start_method="spawn"):
+            queue_size=100, skiplines=0, batch_size=100):
         """
         Initializes the reader with the file path, number of processes, queue size, and number of lines to skip.
 
@@ -30,7 +29,6 @@ class WikidataDumpReader:
         self.num_processes = max(1, num_processes)
         self.queue_size = queue_size
         self.batch_size = max(1, batch_size)
-        self.start_method = start_method
 
     def line_to_entity(self, line):
         """
@@ -74,7 +72,7 @@ class WikidataDumpReader:
         - init_consumer_args (tuple or list or None): Optional args for initializer.
         """
 
-        ctx = get_context(self.start_method)
+        ctx = get_context("fork")
         init_consumer_args = tuple(init_consumer_args or ())
 
         self.queue = ctx.Queue(maxsize=self.queue_size) # This queue is shared across all processes
