@@ -48,6 +48,7 @@ HF_PUBLISHER = None
 NEEDS_DUMP_READER = SAVE_LABELS or SAVE_WD_TO_HF or SAVE_TO_VECTORDB
 
 dump_reader = None
+LABEL_DB_READY = False
 
 
 '''
@@ -186,6 +187,21 @@ def init_vector_worker():
     ASTRADB = AstraDBConnect(lang=LANG, config_path=ASTRA_API_PATH)
 
 
+def init_label_worker():
+    """Initialize label DB client inside each forked consumer process."""
+    global LABEL_DB_READY
+    if not LABEL_DB_READY:
+        WikidataLabel.initialize_database()
+        LABEL_DB_READY = True
+
+
+def init_second_pass_worker():
+    """Initialize all second-pass process-local dependencies."""
+    init_label_worker()
+    if SAVE_TO_VECTORDB:
+        init_vector_worker()
+
+
 def push_to_vectorDB(items, label_factory=None):
     global VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB
     if any(x is None for x in (VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB)):
@@ -277,9 +293,6 @@ def run_pipeline(
     else:
         dump_reader = None
 
-    if run_first_pass_labels or run_second_pass_processing:
-        WikidataLabel.initialize_database()
-
     if run_second_pass_processing and SAVE_WD_TO_HF:
         HF_PUBLISHER = WikidataHFDatasetPublisher(
             branch=HF_BRANCH,
@@ -292,6 +305,7 @@ def run_pipeline(
         dump_reader.run(
             process_label_batch,
             handler_receives_batch=True,
+            init_consumer=init_label_worker,
         )
 
     if run_second_pass_processing:
@@ -299,7 +313,7 @@ def run_pipeline(
             dump_reader.run(
                 process_second_pass_batch,
                 handler_receives_batch=True,
-                init_consumer=init_vector_worker if SAVE_TO_VECTORDB else None
+                init_consumer=init_second_pass_worker,
             )
         finally:
             if SAVE_WD_TO_HF and HF_PUBLISHER is not None:
