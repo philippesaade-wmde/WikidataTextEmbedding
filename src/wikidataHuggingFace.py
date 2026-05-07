@@ -1,4 +1,4 @@
-import json
+import orjson
 import os
 import traceback
 import tempfile
@@ -39,7 +39,7 @@ class WikidataHFDatasetPublisher:
         self.repo_id = os.environ.get("HF_REPO_ID")
         if config_path and os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f_in:
-                data = json.load(f_in)
+                data = orjson.load(f_in)
                 self.token = data.get("API_KEY", self.token)
                 self.repo_id = data.get("REPO_ID", self.repo_id)
 
@@ -241,11 +241,11 @@ class WikidataHFDatasetPublisher:
             if item:
                 rows.append({
                     "id": item["id"],
-                    "labels": json.dumps(item["labels"], separators=(",", ":")),
-                    "descriptions": json.dumps(item["descriptions"], separators=(",", ":")),
-                    "aliases": json.dumps(item["aliases"], separators=(",", ":")),
-                    "sitelinks": json.dumps(item["sitelinks"], separators=(",", ":")),
-                    "claims": json.dumps(item["claims"], separators=(",", ":")),
+                    "labels": orjson.dumps(item["labels"], separators=(",", ":")),
+                    "descriptions": orjson.dumps(item["descriptions"], separators=(",", ":")),
+                    "aliases": orjson.dumps(item["aliases"], separators=(",", ":")),
+                    "sitelinks": orjson.dumps(item["sitelinks"], separators=(",", ":")),
+                    "claims": orjson.dumps(item["claims"], separators=(",", ":")),
                 })
         return self.add_records(rows)
 
