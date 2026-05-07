@@ -24,6 +24,7 @@ ASTRA_API_PATH = os.environ.get("ASTRA_API_PATH", "./API_tokens/datastax_api.jso
 WD_HF_API_PATH = os.environ.get("WD_HF_API_PATH", "./API_tokens/wd_hf_api.json")
 VECTORS_HF_API_PATH = os.environ.get("VECTORS_HF_API_PATH", "./API_tokens/vectors_hf_api.json")
 HF_CHUNK_SIZE = int(os.environ.get("HF_CHUNK_SIZE", 1000))
+HF_BATCH_SIZE = int(os.environ.get("HF_BATCH_SIZE", 32))
 DUMP_DATE = os.environ.get("DUMP_DATE", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
 HF_BRANCH = os.environ.get("HF_BRANCH", datetime.now(timezone.utc).strftime("%Y%m%d"))
 VECTOR_HF_BRANCH = os.environ.get("VECTOR_HF_BRANCH", HF_BRANCH)
@@ -298,7 +299,7 @@ def run_pipeline(
             branch=HF_BRANCH,
             config_path=WD_HF_API_PATH,
             storage_chunk_size=HF_CHUNK_SIZE,
-            memory_chunk_size=10
+            memory_chunk_size=HF_BATCH_SIZE
         )
 
     if run_first_pass_labels:
@@ -324,7 +325,7 @@ def run_pipeline(
             branch=VECTOR_HF_BRANCH,
             config_path=VECTORS_HF_API_PATH,
             storage_chunk_size=HF_CHUNK_SIZE,
-            memory_chunk_size=50,
+            memory_chunk_size=HF_BATCH_SIZE,
             data_dir=f"data/{LANG}",
         )
 
