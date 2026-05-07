@@ -210,95 +210,24 @@ def init_worker(enable_vector=False):
         ASTRADB = AstraDBConnect(lang=LANG, config_path=ASTRA_API_PATH)
 
 
-def process_processing_pass_batch(items):
-    label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
-
-    if SAVE_WD_TO_HF:
-        push_to_hf(items, label_factory=label_factory)
-    if SAVE_TO_VECTORDB:
-        push_to_vectorDB(items, label_factory=label_factory)
-
-
-# ---- Pipeline passes ----
-def run_label_pass(reader):
-    reader.run(
-        save_labels,
-        handler_receives_batch=True,
-        init_consumer=init_worker,
-        init_consumer_args=(False,),
-    )
-
-
-def run_processing_pass_batches(reader):
-    try:
-        reader.run(
-            process_processing_pass_batch,
-            handler_receives_batch=True,
-            init_consumer=init_worker,
-            init_consumer_args=(SAVE_TO_VECTORDB,),
-        )
-    finally:
-        if SAVE_WD_TO_HF and HF_PUBLISHER is not None:
-            HF_PUBLISHER.flush()
-
-
-def run_vector_cache_to_hf_pass():
-    global HF_PUBLISHER
-    HF_PUBLISHER = WikidataHFDatasetPublisher(
-        branch=VECTOR_HF_BRANCH,
-        config_path=VECTORS_HF_API_PATH,
-        storage_chunk_size=HF_CHUNK_SIZE,
-        memory_chunk_size=HF_BATCH_SIZE,
-        queue_size=HF_QUEUE_SIZE,
-        data_dir=f"data/{LANG}",
-    )
-    try:
-        save_vectors_to_hf()
-    finally:
-        HF_PUBLISHER.flush()
-
-
 # ---- Orchestration ----
-def run_pipeline(
-    run_first_pass_labels=SAVE_LABELS,
-    run_processing_pass_enabled=(SAVE_WD_TO_HF or SAVE_TO_VECTORDB),
-    run_vectors_to_hf=SAVE_VECTORS_TO_HF,
-):
-    global dump_reader, HF_PUBLISHER
+def create_dump_reader():
+    global FORCE_DOWNLOAD_DUMP
 
-    if not (run_first_pass_labels or run_processing_pass_enabled):
-        dump_reader = None
-    else:
-        check_wdtextifier_stack()
-        dump_reader = WikidataDumpReader(
-            DUMP_PATH,
-            num_processes=NUM_PROCESSES,
-            queue_size=READER_QUEUE_SIZE,
-            batch_size=READER_BATCH_SIZE,
-        )
+    check_wdtextifier_stack()
+    reader = WikidataDumpReader(
+        DUMP_PATH,
+        num_processes=NUM_PROCESSES,
+        queue_size=READER_QUEUE_SIZE,
+        batch_size=READER_BATCH_SIZE,
+    )
 
-        if FORCE_DOWNLOAD_DUMP or (not os.path.exists(DUMP_PATH)):
-            print(f"File {DUMP_PATH} does not exist. Downloading...")
-            dump_reader.download()
+    if FORCE_DOWNLOAD_DUMP or (not os.path.exists(DUMP_PATH)):
+        print(f"File {DUMP_PATH} does not exist. Downloading...")
+        reader.download()
+        FORCE_DOWNLOAD_DUMP = False
 
-    if run_processing_pass_enabled and SAVE_WD_TO_HF:
-        HF_PUBLISHER = WikidataHFDatasetPublisher(
-            branch=HF_BRANCH,
-            config_path=WD_HF_API_PATH,
-            storage_chunk_size=HF_CHUNK_SIZE,
-            memory_chunk_size=HF_BATCH_SIZE,
-            queue_size=HF_QUEUE_SIZE,
-            data_dir=f"data/{LANG}",
-        )
-
-    if run_first_pass_labels and dump_reader is not None:
-        run_label_pass(dump_reader)
-
-    if run_processing_pass_enabled and dump_reader is not None:
-        run_processing_pass_batches(dump_reader)
-
-    if run_vectors_to_hf:
-        run_vector_cache_to_hf_pass()
+    return reader
 
 
 def reset_runtime_state():
@@ -316,39 +245,102 @@ def reset_runtime_state():
     ASTRADB = None
 
 
-def run_pipeline_all_languages():
-    global LANG, FALLBACK_LANG, HF_BRANCH, VECTOR_HF_BRANCH
+def run_labels_stage():
+    print("Running label pass")
+    reset_runtime_state()
+    reader = create_dump_reader()
+    reader.run(
+        save_labels,
+        handler_receives_batch=True,
+        init_consumer=init_worker,
+        init_consumer_args=(False,),
+    )
 
-    if not WD_LANGS:
-        run_pipeline()
-        return
 
-    if SAVE_LABELS:
-        print("Running shared label pass once before per-language processing passes")
-        reset_runtime_state()
-        run_pipeline(
-            run_first_pass_labels=True,
-            run_processing_pass_enabled=False,
-            run_vectors_to_hf=False,
+def run_wd_to_hf_stage():
+    global HF_PUBLISHER
+
+    print("Running full Wikidata -> HF pass")
+    reset_runtime_state()
+    reader = create_dump_reader()
+    HF_PUBLISHER = WikidataHFDatasetPublisher(
+        branch=HF_BRANCH,
+        config_path=WD_HF_API_PATH,
+        storage_chunk_size=HF_CHUNK_SIZE,
+        memory_chunk_size=HF_BATCH_SIZE,
+        queue_size=HF_QUEUE_SIZE,
+        data_dir=f"data/{LANG}",
+    )
+
+    try:
+        reader.run(
+            push_to_hf,
+            handler_receives_batch=True,
+            init_consumer=init_worker,
+            init_consumer_args=(False,),
+        )
+    finally:
+        if HF_PUBLISHER is not None:
+            HF_PUBLISHER.flush()
+
+
+def run_vector_stages_per_language():
+    global LANG, FALLBACK_LANG, VECTOR_HF_BRANCH, HF_PUBLISHER
+
+    languages = WD_LANGS or (LANG,)
+    default_fallback = os.environ.get("FALLBACK_LANG", FALLBACK_LANG)
+    base_vector_hf_branch = VECTOR_HF_BRANCH
+    multiple_languages = len(languages) > 1
+
+    for lang in languages:
+        fallback = os.environ.get(
+            f"FALLBACK_LANG_{lang.upper()}",
+            default_fallback or lang,
+        )
+        vector_hf_branch = (
+            f"{base_vector_hf_branch}-{lang}" if multiple_languages else base_vector_hf_branch
         )
 
-    default_fallback = os.environ.get("FALLBACK_LANG")
-    base_hf_branch = HF_BRANCH
-    base_vector_hf_branch = VECTOR_HF_BRANCH
-    for lang in WD_LANGS:
-        fallback = os.environ.get(f"FALLBACK_LANG_{lang.upper()}", default_fallback or lang)
-        print(f"Running pipeline for language={lang} (fallback={fallback})")
+        print(f"Running vector stages for language={lang} (fallback={fallback})")
         LANG = lang
         FALLBACK_LANG = fallback
-        HF_BRANCH = f"{base_hf_branch}-{lang}"
-        VECTOR_HF_BRANCH = f"{base_vector_hf_branch}-{lang}"
+        VECTOR_HF_BRANCH = vector_hf_branch
         reset_runtime_state()
-        run_pipeline(
-            run_first_pass_labels=False,
-            run_processing_pass_enabled=(SAVE_WD_TO_HF or SAVE_TO_VECTORDB),
-            run_vectors_to_hf=SAVE_VECTORS_TO_HF,
-        )
+
+        if SAVE_TO_VECTORDB:
+            reader = create_dump_reader()
+            reader.run(
+                push_to_vectorDB,
+                handler_receives_batch=True,
+                init_consumer=init_worker,
+                init_consumer_args=(True,),
+            )
+
+        if SAVE_VECTORS_TO_HF:
+            HF_PUBLISHER = WikidataHFDatasetPublisher(
+                branch=VECTOR_HF_BRANCH,
+                config_path=VECTORS_HF_API_PATH,
+                storage_chunk_size=HF_CHUNK_SIZE,
+                memory_chunk_size=HF_BATCH_SIZE,
+                queue_size=HF_QUEUE_SIZE,
+                data_dir=f"data/{LANG}",
+            )
+            try:
+                save_vectors_to_hf()
+            finally:
+                HF_PUBLISHER.flush()
+
+
+def run_pipeline():
+    if SAVE_LABELS:
+        run_labels_stage()
+
+    if SAVE_WD_TO_HF:
+        run_wd_to_hf_stage()
+
+    if SAVE_TO_VECTORDB or SAVE_VECTORS_TO_HF:
+        run_vector_stages_per_language()
 
 
 if __name__ == "__main__":
-    run_pipeline_all_languages()
+    run_pipeline()
