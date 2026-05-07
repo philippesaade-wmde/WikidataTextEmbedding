@@ -195,7 +195,7 @@ class WikidataHFDatasetPublisher:
 
         with self.write_lock:
             self.queue.put(None)
-item
+
         self.uploader.join()
         if self.uploader.exitcode not in (0, None):
             raise RuntimeError(
