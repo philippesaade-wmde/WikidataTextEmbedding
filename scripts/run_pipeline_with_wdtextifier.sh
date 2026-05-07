@@ -77,6 +77,13 @@ if [[ "$HEALTH_STATUS" != "$TARGET_STATUS" ]]; then
 fi
 
 cd "$ROOT_DIR"
+
+# Ensure latest local code is used inside the pipeline container image.
+docker compose \
+  -p "$PIPELINE_PROJECT" \
+  --env-file "$ENV_FILE" \
+  build pipeline
+
 WDTEXTIFIER_COMPOSE_NETWORK="${WDTEXTIFIER_PROJECT}_default" \
   docker compose \
     -p "$PIPELINE_PROJECT" \
