@@ -22,7 +22,7 @@ class JinaAITokenizer:
 class JinaAIEmbedder:
     def __init__(
             self, passage_task="retrieval.passage",
-            query_task="retrieval.query", embedding_dim=1024, device='cuda'):
+            query_task="retrieval.query", embedding_dim=512, device='cuda'):
         """
         Initializes the JinaAIEmbedder class with the model,
         and task identifiers.
@@ -99,7 +99,7 @@ class JinaAIEmbedder:
 class JinaAIAPIEmbedder:
     def __init__(
             self, passage_task="retrieval.passage",
-            query_task="retrieval.query", embedding_dim=1024,
+            query_task="retrieval.query", embedding_dim=512,
             config_path: str = "../API_tokens/jina_api.json"):
         """
         Initializes the JinaAIEmbedder class with the model, tokenizer,

@@ -172,16 +172,16 @@ class AstraDBConnect:
 
         updated = []
         for doc in docs:
+            docid = doc['_id']
+            del doc['_id']
 
-            if doc['_id'].startswith("Q"):
+            if docid.startswith("Q"):
                 collection = self.item_collection
-            elif doc['_id'].startswith("P"):
+            elif docid.startswith("P"):
                 collection = self.property_collection
 
             while True:
                 try:
-                    docid = doc['_id']
-                    del doc['_id']
                     collection.update_one(
                         filter={'_id': docid},
                         update={
