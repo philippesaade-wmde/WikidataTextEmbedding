@@ -1,4 +1,5 @@
 import orjson
+import json
 import os
 import traceback
 import tempfile
@@ -39,7 +40,7 @@ class WikidataHFDatasetPublisher:
         self.repo_id = os.environ.get("HF_REPO_ID")
         if config_path and os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f_in:
-                data = orjson.load(f_in)
+                data = json.load(f_in)
                 self.token = data.get("API_KEY", self.token)
                 self.repo_id = data.get("REPO_ID", self.repo_id)
 
