@@ -195,7 +195,7 @@ class WikidataHFDatasetPublisher:
 
         with self.write_lock:
             self.queue.put(None)
-
+item
         self.uploader.join()
         if self.uploader.exitcode not in (0, None):
             raise RuntimeError(
@@ -242,11 +242,11 @@ class WikidataHFDatasetPublisher:
             if item:
                 rows.append({
                     "id": item["id"],
-                    "labels": orjson.dumps(item["labels"], separators=(",", ":")),
-                    "descriptions": orjson.dumps(item["descriptions"], separators=(",", ":")),
-                    "aliases": orjson.dumps(item["aliases"], separators=(",", ":")),
-                    "sitelinks": orjson.dumps(item["sitelinks"], separators=(",", ":")),
-                    "claims": orjson.dumps(item["claims"], separators=(",", ":")),
+                    "labels": orjson.dumps(item["labels"]).decode("utf-8"),
+                    "descriptions": orjson.dumps(item["descriptions"]).decode("utf-8"),
+                    "aliases": orjson.dumps(item["aliases"]).decode("utf-8"),
+                    "sitelinks": orjson.dumps(item["sitelinks"]).decode("utf-8"),
+                    "claims": orjson.dumps(item["claims"]).decode("utf-8")
                 })
         return self.add_records(rows)
 
