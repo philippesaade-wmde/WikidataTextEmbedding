@@ -180,14 +180,16 @@ class AstraDBConnect:
 
             while True:
                 try:
+                    docid = doc['_id']
+                    del doc['_id']
                     collection.update_one(
-                        filter={'_id': doc['_id']},
+                        filter={'_id': docid},
                         update={
                             "$set": doc
                         },
                         upsert=True
                     )
-                    updated.append(doc['_id'])
+                    updated.append(docid)
                     break
                 except Exception:
                     traceback.print_exc()
