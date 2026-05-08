@@ -148,7 +148,6 @@ class AstraDBConnect:
                     break
                 except DataAPIResponseException:
                     # Data is too large to publish in Bulk
-                    traceback.print_exc()
                     inserted_ids.extend(self.update_documents(properties))
                     break
                 except Exception:
@@ -197,6 +196,7 @@ class AstraDBConnect:
             else:
                 continue
 
+            truncated = False
             while True:
                 try:
                     collection.update_one(
@@ -208,6 +208,12 @@ class AstraDBConnect:
                     )
                     updated.append(docid)
                     break
+                except DataAPIResponseException as e:
+                    # Content is too large to publish
+                    if truncated:
+                        raise e
+                    update_fields['content'] = update_fields['content'][:3000] + " [TRUNCATED]"
+                    truncated = True
                 except Exception:
                     traceback.print_exc()
                     time.sleep(1)
