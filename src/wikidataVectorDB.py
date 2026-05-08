@@ -3,6 +3,7 @@ import traceback
 import os
 from astrapy import DataAPIClient
 from astrapy.exceptions.collection_exceptions import CollectionInsertManyException
+from astrapy.exceptions.data_api_exceptions import DataAPIResponseException
 from astrapy.api_options import APIOptions, TimeoutOptions
 
 import json
@@ -125,6 +126,11 @@ class AstraDBConnect:
                     traceback.print_exc()
                     inserted_ids.extend(e.inserted_ids)
                     break
+                except DataAPIResponseException:
+                    # Data is too large to publish in Bulk
+                    traceback.print_exc()
+                    inserted_ids.extend(self.update_documents(items))
+                    break
                 except Exception:
                     traceback.print_exc()
                     time.sleep(1)
@@ -139,6 +145,11 @@ class AstraDBConnect:
                     # Ignore duplicate IDs error.
                     traceback.print_exc()
                     inserted_ids.extend(e.inserted_ids)
+                    break
+                except DataAPIResponseException:
+                    # Data is too large to publish in Bulk
+                    traceback.print_exc()
+                    inserted_ids.extend(self.update_documents(properties))
                     break
                 except Exception:
                     traceback.print_exc()
