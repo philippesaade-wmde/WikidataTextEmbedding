@@ -385,6 +385,7 @@ def run_vector_stages_per_language():
                 "vector_saved_docs",
                 "vector_cached_docs",
             ))
+            stage_exc = None
             try:
                 reader.run(
                     push_to_vectorDB,
@@ -393,18 +394,20 @@ def run_vector_stages_per_language():
                     init_consumer_args=(True,),
                 )
             except Exception as exc:
+                stage_exc = exc
                 STATS_TRACKER.record_error(stage_name, exc=exc)
-                raise
             finally:
+                vectordb_stats = STATS_TRACKER.read_counters(counters)
+                vectordb_stats.update({
+                    "entities_processed": int(reader.iterations.value),
+                    "handler_errors": int(reader.handler_errors.value),
+                })
+                lang_stats["vectordb"] = vectordb_stats
+                STATS_TRACKER.record_error(stage_name, vectordb_stats["handler_errors"])
                 STATS_TRACKER.clear_counters()
 
-            vectordb_stats = STATS_TRACKER.read_counters(counters)
-            vectordb_stats.update({
-                "entities_processed": int(reader.iterations.value),
-                "handler_errors": int(reader.handler_errors.value),
-            })
-            lang_stats["vectordb"] = vectordb_stats
-            STATS_TRACKER.record_error(stage_name, vectordb_stats["handler_errors"])
+            if stage_exc is not None:
+                raise stage_exc
 
         if SAVE_VECTORS_TO_HF:
             stage_name = f"vectors_to_hf:{lang}"

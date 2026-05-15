@@ -54,7 +54,8 @@ class WikidataDumpReader:
 
     def run(self, handler_func, handler_receives_batch=False,
             max_iterations=None, verbose=True,
-            init_consumer=None, init_consumer_args=None):
+            init_consumer=None, init_consumer_args=None,
+            consumer_join_timeout_s=3600):
         """
         Starts processing using a producer-consumer model with multiprocessing.
 
@@ -108,7 +109,8 @@ class WikidataDumpReader:
             if producer_p.exitcode != 0:
                 raise RuntimeError(f"Producer failed with exit code {producer_p.exitcode}")
 
-            remaining = self.num_processes
+            # Only running consumers need a shutdown sentinel.
+            remaining = sum(1 for cp in consumer_ps if cp.is_alive())
             while remaining:
                 try:
                     self.queue.put(None, timeout=1)
@@ -117,13 +119,22 @@ class WikidataDumpReader:
                     if not any(cp.is_alive() for cp in consumer_ps):
                         raise RuntimeError("All consumers died before shutdown sentinels could be queued")
 
+            force_terminated = set()
             for cp in consumer_ps:
-                cp.join()
-                if cp.exitcode != 0:
+                cp.join(timeout=consumer_join_timeout_s)
+                if cp.is_alive():
+                    # Avoid deadlocking the parent forever on a stuck consumer.
+                    force_terminated.add(cp.pid)
+                    cp.terminate()
+                    cp.join(timeout=5)
+                if cp.exitcode != 0 and cp.pid not in force_terminated:
                     raise RuntimeError(f"Consumer failed with exit code {cp.exitcode}")
 
             if reporter_p:
-                reporter_p.join()
+                reporter_p.join(timeout=5)
+                if reporter_p.is_alive():
+                    reporter_p.terminate()
+                    reporter_p.join(timeout=5)
 
         finally:
             # Ensure all processes are terminated
