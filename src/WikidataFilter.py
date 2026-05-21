@@ -175,3 +175,55 @@ class WikidataItemFilter:
             and self.has_content(item) \
                 and self.not_disambiguation(item) \
                     and self.has_sitelink(item)
+
+class WikidataScholarlyArticleFilter:
+
+    instance_of_qids = ["Q13442814","Q7318358","Q2782326","Q815382","Q1348305","Q187685","Q1907875","Q18918145","Q1266946","Q23927052","Q1504425","Q45182324","Q1402850","Q7316896","Q580922","Q30749496","Q111475835","Q92998777","Q114613919","Q798134","Q1385450","Q10885494","Q51282918","Q51282711","Q111475860","Q51283092","Q15706459","Q59387148","Q110716513","Q58897583","Q51283145","Q54670950","Q91901000","Q111476177","Q51283053","Q1414362","Q51283181","Q51282999","Q51283199","Q82969330","Q112585758","Q118114827","Q106276531","Q1884156","Q51283362","Q46629343","Q100328456","Q51283219","Q70471362"]
+
+    def __init__(self, lang, fallback_lang=None):
+        self.lang = lang
+        self.fallback_lang = fallback_lang or lang
+
+    def has_label(self, item):
+        has_lang = self.lang in item.get('labels', {})
+        has_fallback_lang = self.fallback_lang and (self.fallback_lang in item.get('labels', {}))
+        has_mul_lang = 'mul' in item.get('labels', {})
+
+        return has_lang or has_fallback_lang or has_mul_lang
+
+    def has_description(self, item):
+        has_lang = self.lang in item.get('descriptions', {})
+        has_fallback_lang = self.fallback_lang and (self.fallback_lang in item.get('descriptions', {}))
+        has_mul_lang = 'mul' in item.get('descriptions', {})
+
+        return has_lang or has_fallback_lang or has_mul_lang
+
+    def not_disambiguation(self, item, disambiguation_qid='Q4167410'):
+        instanceof = item.get('claims', {}).get('P31', [])
+        instanceof = [c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id') for c in instanceof]
+        return disambiguation_qid not in instanceof
+
+    def is_scholarly_article(self, item, publication_type_pid='P13046'):
+        # Check if the item is an instance of any of the scholarly article QIDs
+        instanceof = item.get('claims', {}).get('P31', [])
+        instanceof = [c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id') for c in instanceof]
+        instanceof_scholarlyarticle = any(qid in self.instance_of_qids for qid in instanceof)
+
+        # Check if it has a non-deprecated publication type of scholarly work (P13046) statement
+        publication_type_claims = item.get('claims', {}).get(publication_type_pid, [])
+        publication_type_claims = [c for c in publication_type_claims if c.get('rank') != 'deprecated']
+        publication_type_claims = len(publication_type_claims) > 0
+
+        return instanceof_scholarlyarticle and publication_type_claims
+
+    def has_content(self, item):
+        return self.has_description(item) or len(item.get('claims', {})) > 0
+
+    def filter(self, item):
+        if item.get("id", "").startswith("P"):
+            return self.has_label(item) and self.has_content(item)
+
+        return self.has_label(item) \
+            and self.has_content(item) \
+                and self.not_disambiguation(item) \
+                    and self.is_scholarly_article(item)
