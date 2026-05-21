@@ -1,7 +1,10 @@
 import json
 import os
+import sys
+from pathlib import Path
 from multiprocessing import get_context
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.WikidataDumpReader import WikidataDumpReader
 from src.WikidataFilter import WikidataItemFilter, WikidataScholarlyArticleFilter
 
@@ -11,6 +14,7 @@ DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
 NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
 READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 128))
 READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", 16))
+OUTPUT_PATH = os.environ.get("OUTPUT_PATH", "data/filter_stats.json")
 
 
 # ---- Process-local runtime state ----
@@ -160,6 +164,12 @@ def run_stats():
             "queue_size": READER_QUEUE_SIZE,
         },
     }
+
+    output_dir = os.path.dirname(OUTPUT_PATH)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
 
     print(json.dumps(output, indent=2, ensure_ascii=False))
 

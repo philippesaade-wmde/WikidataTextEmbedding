@@ -203,7 +203,7 @@ class WikidataScholarlyArticleFilter:
         instanceof = [c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id') for c in instanceof]
         return disambiguation_qid not in instanceof
 
-    def is_scholarly_article(self, item, publication_type_pid='P13046'):
+    def not_scholarly_article(self, item, publication_type_pid='P13046'):
         # Check if the item is an instance of any of the scholarly article QIDs
         instanceof = item.get('claims', {}).get('P31', [])
         instanceof = [c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id') for c in instanceof]
@@ -214,7 +214,7 @@ class WikidataScholarlyArticleFilter:
         publication_type_claims = [c for c in publication_type_claims if c.get('rank') != 'deprecated']
         publication_type_claims = len(publication_type_claims) > 0
 
-        return instanceof_scholarlyarticle and publication_type_claims
+        return not (instanceof_scholarlyarticle and publication_type_claims)
 
     def has_content(self, item):
         return self.has_description(item) or len(item.get('claims', {})) > 0
@@ -226,4 +226,4 @@ class WikidataScholarlyArticleFilter:
         return self.has_label(item) \
             and self.has_content(item) \
                 and self.not_disambiguation(item) \
-                    and self.is_scholarly_article(item)
+                    and self.not_scholarly_article(item)
