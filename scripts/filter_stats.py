@@ -12,8 +12,8 @@ from src.WikidataFilter import WikidataItemFilter, WikidataScholarlyArticleFilte
 # ---- Runtime config ----
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
 NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
-READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 128))
-READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", 16))
+READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 10))
+READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", 2000))
 OUTPUT_PATH = os.environ.get("OUTPUT_PATH", "data/filter_stats.json")
 
 
