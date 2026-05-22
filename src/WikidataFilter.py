@@ -161,7 +161,11 @@ class WikidataItemFilter:
 
     def not_disambiguation(self, item, disambiguation_qid='Q4167410'):
         instanceof = item.get('claims', {}).get('P31', [])
-        instanceof = [c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id') for c in instanceof]
+        instanceof = [
+            c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id')
+            for c in instanceof
+            if c.get('rank') != 'deprecated'
+        ]
         return disambiguation_qid not in instanceof
 
     def has_content(self, item):
@@ -200,13 +204,21 @@ class WikidataScholarlyArticleFilter:
 
     def not_disambiguation(self, item, disambiguation_qid='Q4167410'):
         instanceof = item.get('claims', {}).get('P31', [])
-        instanceof = [c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id') for c in instanceof]
+        instanceof = [
+            c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id')
+            for c in instanceof
+            if c.get('rank') != 'deprecated'
+        ]
         return disambiguation_qid not in instanceof
 
     def not_scholarly_article(self, item, publication_type_pid='P13046'):
         # Check if the item is an instance of any of the scholarly article QIDs
         instanceof = item.get('claims', {}).get('P31', [])
-        instanceof = [c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id') for c in instanceof]
+        instanceof = [
+            c.get('mainsnak', {}).get('datavalue', {}).get('value', {}).get('id')
+            for c in instanceof
+            if c.get('rank') != 'deprecated'
+        ]
         instanceof_scholarlyarticle = any(qid in self.instance_of_qids for qid in instanceof)
 
         # Check if it has a non-deprecated publication type of scholarly work (P13046) statement
@@ -214,7 +226,7 @@ class WikidataScholarlyArticleFilter:
         publication_type_claims = [c for c in publication_type_claims if c.get('rank') != 'deprecated']
         publication_type_claims = len(publication_type_claims) > 0
 
-        return not (instanceof_scholarlyarticle and publication_type_claims)
+        return not (instanceof_scholarlyarticle or publication_type_claims)
 
     def has_content(self, item):
         return self.has_description(item) or len(item.get('claims', {})) > 0
