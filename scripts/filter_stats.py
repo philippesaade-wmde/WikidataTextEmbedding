@@ -57,10 +57,13 @@ def collect_stats(items):
             continue
 
         langs = set(entity.get("labels", {}).keys())
-        langs.update(entity.get("descriptions", {}).keys())
         if not langs:
             continue
 
+        any_has_label = False
+        any_has_content = False
+        any_not_disambiguation = False
+        any_basic_filters = False
         any_item = False
         any_scholarly = False
 
@@ -69,9 +72,24 @@ def collect_stats(items):
                 ITEM_FILTERS[lang] = WikidataItemFilter(lang=lang, fallback_lang=lang)
                 SCHOLARLY_FILTERS[lang] = WikidataScholarlyArticleFilter(lang=lang, fallback_lang=lang)
 
+            has_label = ITEM_FILTERS[lang].has_label(entity)
+            has_content = ITEM_FILTERS[lang].has_content(entity)
+            not_disambiguation = ITEM_FILTERS[lang].not_disambiguation(entity)
             item_ok = ITEM_FILTERS[lang].filter(entity)
             scholarly_ok = SCHOLARLY_FILTERS[lang].filter(entity)
 
+            if has_label:
+                key = f"{lang}:has_label"
+                batch_stats[key] = batch_stats.get(key, 0) + 1
+            if has_content:
+                key = f"{lang}:has_content"
+                batch_stats[key] = batch_stats.get(key, 0) + 1
+            if not_disambiguation:
+                key = f"{lang}:not_disambiguation"
+                batch_stats[key] = batch_stats.get(key, 0) + 1
+            if has_label and has_content and not_disambiguation:
+                key = f"{lang}:basic_filters"
+                batch_stats[key] = batch_stats.get(key, 0) + 1
             if item_ok:
                 key = f"{lang}:item"
                 batch_stats[key] = batch_stats.get(key, 0) + 1
@@ -82,9 +100,21 @@ def collect_stats(items):
                 key = f"{lang}:common"
                 batch_stats[key] = batch_stats.get(key, 0) + 1
 
+            any_has_label = any_has_label or has_label
+            any_has_content = any_has_content or has_content
+            any_not_disambiguation = any_not_disambiguation or not_disambiguation
+            any_basic_filters = any_basic_filters or (has_label and has_content and not_disambiguation)
             any_item = any_item or item_ok
             any_scholarly = any_scholarly or scholarly_ok
 
+        if any_has_label:
+            batch_stats["all:has_label"] += 1
+        if any_has_content:
+            batch_stats["all:has_content"] += 1
+        if any_not_disambiguation:
+            batch_stats["all:not_disambiguation"] += 1
+        if any_basic_filters:
+            batch_stats["all:basic_filters"] += 1
         if any_item:
             batch_stats["all:item"] += 1
         if any_scholarly:
@@ -107,6 +137,10 @@ def run_stats():
     SHARED_STATS = manager.dict({
         "total_entities": 0,
         "total_properties": 0,
+        "all:has_label": 0,
+        "all:has_content": 0,
+        "all:not_disambiguation": 0,
+        "all:basic_filters": 0,
         "all:item": 0,
         "all:scholarly": 0,
         "all:common": 0,
@@ -136,10 +170,12 @@ def run_stats():
 
     per_language = {
         lang: {
-            "total_entities": int(merged.get("total_entities", 0)),
-            "total_properties": int(merged.get("total_properties", 0)),
-            "item_filter_pass": int(merged.get(f"{lang}:item", 0)),
-            "scholarly_filter_pass": int(merged.get(f"{lang}:scholarly", 0)),
+            "has_label_pass": int(merged.get(f"{lang}:has_label", 0)),
+            "has_content_pass": int(merged.get(f"{lang}:has_content", 0)),
+            "not_disambiguation_pass": int(merged.get(f"{lang}:not_disambiguation", 0)),
+            "basic_filters_pass": int(merged.get(f"{lang}:basic_filters", 0)),
+            "has_wikipedia_sitelink_filter_pass": int(merged.get(f"{lang}:item", 0)),
+            "non_scholarly_filter_pass": int(merged.get(f"{lang}:scholarly", 0)),
             "in_common": int(merged.get(f"{lang}:common", 0)),
         }
         for lang in langs
@@ -148,14 +184,18 @@ def run_stats():
     output = {
         "dump_path": DUMP_PATH,
         "languages": langs,
-        "all_languages": {
+        "all_items": {
             "total_entities": int(merged.get("total_entities", 0)),
             "total_properties": int(merged.get("total_properties", 0)),
-            "item_filter_pass": int(merged.get("all:item", 0)),
-            "scholarly_filter_pass": int(merged.get("all:scholarly", 0)),
+            "has_label_pass": int(merged.get("all:has_label", 0)),
+            "has_content_pass": int(merged.get("all:has_content", 0)),
+            "not_disambiguation_pass": int(merged.get("all:not_disambiguation", 0)),
+            "basic_filters_pass": int(merged.get("all:basic_filters", 0)),
+            "has_wikipedia_sitelink_filter_pass": int(merged.get("all:item", 0)),
+            "non_scholarly_filter_pass": int(merged.get("all:scholarly", 0)),
             "in_common": int(merged.get("all:common", 0)),
         },
-        "per_language": per_language,
+        "per_label_language": per_language,
         "reader": {
             "entities_processed": int(reader.iterations.value),
             "handler_errors": int(reader.handler_errors.value),
