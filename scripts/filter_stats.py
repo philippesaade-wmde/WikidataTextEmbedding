@@ -38,6 +38,10 @@ def collect_stats(items):
     batch_stats = {
         "total_entities": 0,
         "total_properties": 0,
+        "all:has_label": 0,
+        "all:has_content": 0,
+        "all:not_disambiguation": 0,
+        "all:basic_filters": 0,
         "all:item": 0,
         "all:scholarly": 0,
         "all:common": 0,
