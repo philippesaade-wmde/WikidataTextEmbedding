@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.WikidataDumpReader import WikidataDumpReader
-from src.WikidataFilter import WikidataItemFilter, WikidataScholarlyArticleFilter
+from src.WikidataFilter import WikidataScholarlyArticleFilter
 
 
 # ---- Runtime config ----
@@ -16,6 +16,13 @@ NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
 READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 10))
 READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", 2000))
 OUTPUT_PATH = os.environ.get("OUTPUT_PATH", "data/pair_filter_matrix.json")
+TARGET_LANGS = tuple(
+    dict.fromkeys(
+        lang.strip()
+        for lang in os.environ.get("TARGET_LANGS", "en,de,ar,fr").split(",")
+        if lang.strip()
+    )
+)
 
 
 # ---- Filter definitions ----
@@ -59,15 +66,13 @@ FILTERS = [
     {
         "id": "basic",
         "description": (
-            "Passes WikidataItemFilter.has_label and has_content; "
+            "Has any label and has any description or claim; "
             "does not apply the disambiguation filter."
         ),
     },
     {
         "id": "has_wikipedia_sitelink",
-        "description": (
-            "Passes WikidataItemFilter.has_sitelink: has a site ID ending in wiki."
-        ),
+        "description": "Has a sitelink site ID ending in wiki.",
     },
     {
         "id": "has_wikibooks_sitelink",
@@ -118,7 +123,10 @@ FILTERS = [
     },
     {
         "id": "not_scholarly_article",
-        "description": "Is not a scholarly article according to WikidataScholarlyArticleFilter.",
+        "description": (
+            "Standalone scholarly exclusion from WikidataScholarlyArticleFilter; "
+            "does not require basic."
+        ),
     },
     *[
         {
@@ -137,28 +145,17 @@ FILTERS = [
 ]
 FILTER_IDS = [filter_definition["id"] for filter_definition in FILTERS]
 FILTER_INDEX = {filter_id: index for index, filter_id in enumerate(FILTER_IDS)}
+SCHOLARLY_INSTANCE_TYPES = set(WikidataScholarlyArticleFilter.instance_of_qids)
 
 
-# ---- Process-local runtime state ----
-ITEM_FILTERS = None
-ENGLISH_ITEM_FILTER = None
-SCHOLARLY_FILTER = None
+# ---- Process-shared runtime state ----
 SHARED_STATS = None
 SHARED_LOCK = None
 
 
-# ---- Filter helpers ----
-def init_worker():
-    global ITEM_FILTERS, ENGLISH_ITEM_FILTER, SCHOLARLY_FILTER
-
-    ITEM_FILTERS = {}
-    ENGLISH_ITEM_FILTER = WikidataItemFilter(lang="en", fallback_lang="en")
-    SCHOLARLY_FILTER = WikidataScholarlyArticleFilter(lang="en", fallback_lang="en")
-
-
 # ---- Worker and batch handlers ----
 def collect_stats(items):
-    global ITEM_FILTERS, ENGLISH_ITEM_FILTER, SCHOLARLY_FILTER, SHARED_STATS, SHARED_LOCK
+    global SHARED_STATS, SHARED_LOCK
 
     batch_stats = {}
     for entity in items:
@@ -186,18 +183,21 @@ def collect_stats(items):
             and value.get("id")
         }
 
-        any_basic = False
-        for lang in entity.get("labels", {}):
-            if lang not in ITEM_FILTERS:
-                ITEM_FILTERS[lang] = WikidataItemFilter(lang=lang, fallback_lang=lang)
-            has_label = ITEM_FILTERS[lang].has_label(entity)
-            has_content = ITEM_FILTERS[lang].has_content(entity)
-            any_basic = any_basic or (has_label and has_content)
-
-        not_scholarly_article = SCHOLARLY_FILTER.not_scholarly_article(entity)
+        not_scholarly_article = not (
+            bool(instanceof & SCHOLARLY_INSTANCE_TYPES)
+            or any(
+                claim.get("rank") != "deprecated"
+                for claim in entity.get("claims", {}).get("P13046", [])
+            )
+        )
         filter_results = {
-            "basic": any_basic,
-            "has_wikipedia_sitelink": ENGLISH_ITEM_FILTER.has_sitelink(entity),
+            "basic": bool(entity.get("labels")) and (
+                bool(entity.get("descriptions")) or bool(entity.get("claims"))
+            ),
+            "has_wikipedia_sitelink": any(
+                sitelink_id.endswith("wiki")
+                for sitelink_id in sitelink_ids
+            ),
             "has_commons_sitelink": "commonswiki" in sitelink_ids,
             "has_abstract_wikipedia_sitelink": "abstractwiki" in sitelink_ids,
             "has_any_sitelink": bool(sitelinks),
@@ -215,7 +215,6 @@ def collect_stats(items):
 
         for filter_id, qid in EXCLUDED_INSTANCE_TYPES.items():
             filter_results[filter_id] = qid not in instanceof
-        filter_results["not_disambiguation"] = ENGLISH_ITEM_FILTER.not_disambiguation(entity)
         filter_results["none_of_excluded_types"] = not_scholarly_article and all(
             qid not in instanceof
             for qid in EXCLUDED_INSTANCE_TYPES.values()
@@ -224,10 +223,10 @@ def collect_stats(items):
         scope_filter_results = {
             "all_wikidata": filter_results,
         }
-        if ENGLISH_ITEM_FILTER.has_label(entity):
-            english_filter_results = filter_results.copy()
-            english_filter_results["basic"] = ENGLISH_ITEM_FILTER.has_content(entity)
-            scope_filter_results["english_wikidata"] = english_filter_results
+        labels = entity.get("labels", {})
+        for lang in TARGET_LANGS:
+            if lang in labels or "mul" in labels:
+                scope_filter_results[f"language:{lang}"] = filter_results
 
         for scope, filter_results in scope_filter_results.items():
             batch_stats[f"{scope}:total"] = batch_stats.get(f"{scope}:total", 0) + 1
@@ -266,14 +265,13 @@ def run_stats():
     reader.run(
         collect_stats,
         handler_receives_batch=True,
-        init_consumer=init_worker,
     )
 
     merged = {key: int(value) for key, value in SHARED_STATS.items()}
     manager.shutdown()
 
     scopes = {}
-    for scope in ("all_wikidata", "english_wikidata"):
+    for scope in ("all_wikidata", *(f"language:{lang}" for lang in TARGET_LANGS)):
         matrix = [[0] * len(FILTER_IDS) for _ in FILTER_IDS]
         for left_index in range(len(FILTER_IDS)):
             for right_index in range(left_index, len(FILTER_IDS)):
@@ -292,16 +290,30 @@ def run_stats():
             "pair_matrix": matrix,
         }
 
+    per_language = {
+        lang: scopes[f"language:{lang}"]
+        for lang in TARGET_LANGS
+    }
+
     output = {
         "dump_path": DUMP_PATH,
         "matrix_note": (
             "Rows and columns follow filter_order. Each cell counts entities passing both "
             "filters; diagonal cells are individual filter counts."
         ),
-        "english_wikidata_note": "Includes Q/P entities having an English or mul label.",
+        "filter_independence_note": (
+            "Every filter is evaluated independently and does not implicitly include basic. "
+            "Use the basic row or column to get basic combined with another filter."
+        ),
+        "target_languages": list(TARGET_LANGS),
+        "per_language_note": (
+            "Each language includes Q/P entities having that language or a mul label. "
+            "Filter results are language-independent and identical to all_wikidata."
+        ),
         "filter_order": FILTER_IDS,
         "filters": FILTERS,
-        **scopes,
+        "all_wikidata": scopes["all_wikidata"],
+        "per_language": per_language,
         "reader": {
             "entities_processed": int(reader.iterations.value),
             "handler_errors": int(reader.handler_errors.value),
