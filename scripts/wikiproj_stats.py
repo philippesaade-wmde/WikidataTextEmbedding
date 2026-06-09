@@ -124,8 +124,8 @@ FILTERS = [
     {
         "id": "not_scholarly_article",
         "description": (
-            "Standalone scholarly exclusion from WikidataScholarlyArticleFilter; "
-            "does not require basic."
+            "Passes basic and is not a scholarly article according to "
+            "WikidataScholarlyArticleFilter."
         ),
     },
     *[
@@ -219,6 +219,10 @@ def collect_stats(items):
             qid not in instanceof
             for qid in EXCLUDED_INSTANCE_TYPES.values()
         )
+        basic_pass = filter_results["basic"]
+        for filter_id in FILTER_IDS:
+            if filter_id != "basic":
+                filter_results[filter_id] = basic_pass and filter_results[filter_id]
 
         scope_filter_results = {
             "all_wikidata": filter_results,
@@ -301,9 +305,9 @@ def run_stats():
             "Rows and columns follow filter_order. Each cell counts entities passing both "
             "filters; diagonal cells are individual filter counts."
         ),
-        "filter_independence_note": (
-            "Every filter is evaluated independently and does not implicitly include basic. "
-            "Use the basic row or column to get basic combined with another filter."
+        "basic_filter_note": (
+            "Every non-basic filter includes the basic filter. Pairwise cells therefore count "
+            "basic plus both selected filters."
         ),
         "target_languages": list(TARGET_LANGS),
         "per_language_note": (
