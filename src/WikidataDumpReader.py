@@ -1,7 +1,9 @@
 import gzip
 import bz2
+import os
 import orjson
 import time
+from datetime import datetime, timezone
 from tqdm import tqdm
 import requests
 import traceback
@@ -346,9 +348,10 @@ class WikidataDumpReader:
     def download(self, show_progress=True, chunk_size=1024 * 1024):
         """
         Downloads the latest Wikidata dump file with streaming.
+        Writes a sidecar {file_path}.date file containing the dump date (YYYY-MM-DD)
+        taken from the server's Last-Modified header.
 
         Parameters:
-        - extension (str): Compression extension to download ('gz' or 'bz2').
         - show_progress (bool): If True, displays a download progress bar.
         - chunk_size (int): Number of bytes to read per chunk.
         """
@@ -357,6 +360,12 @@ class WikidataDumpReader:
         with requests.get(url, stream=True, timeout=60) as response:
             response.raise_for_status()
             total_size = int(response.headers.get("content-length", 0))
+
+            last_modified = response.headers.get("Last-Modified", "")
+            try:
+                dump_date = datetime.strptime(last_modified, "%a, %d %b %Y %H:%M:%S %Z").strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                dump_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
             with open(self.file_path, "wb") as f, tqdm(
                 total=total_size if total_size > 0 else None,
@@ -371,3 +380,19 @@ class WikidataDumpReader:
                         continue
                     f.write(chunk)
                     pbar.update(len(chunk))
+
+        with open(self.file_path + ".date", "w") as f:
+            f.write(dump_date)
+
+    def get_dump_date(self):
+        """
+        Returns the dump date as a 'YYYY-MM-DD' string.
+        Reads from the sidecar .date file written during download, or falls back
+        to the file's modification time if the sidecar is absent.
+        """
+        date_file = self.file_path + ".date"
+        if os.path.exists(date_file):
+            with open(date_file) as f:
+                return f.read().strip()
+        mtime = os.path.getmtime(self.file_path)
+        return datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%d")
