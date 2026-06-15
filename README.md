@@ -73,6 +73,7 @@ By default, `main.py` reads token/config files from `API_tokens/`:
 | `SAVE_WD_TO_HF` | `false` | Run second pass: publish cleaned Wikidata JSON to HF |
 | `SAVE_TO_VECTORDB` | `false` | Run second pass: embed and push to Astra DB + local vector cache |
 | `SAVE_VECTORS_TO_HF` | `false` | Publish local cached vectors to HF |
+| `DELETE_STALE_VECTORS` | `false` | Prompt to delete vectors absent from the current dump pass |
 | `FORCE_DOWNLOAD_DUMP` | `false` | Force re-download of dump |
 
 ### Language
@@ -92,19 +93,19 @@ By default, `main.py` reads token/config files from `API_tokens/`:
 | `READER_QUEUE_SIZE` | `128` | Reader queue size (in batches) |
 | `READER_BATCH_SIZE` | `16` | Lines per queue batch |
 | `HF_CHUNK_SIZE` | `10000` | Rows per HF upload chunk |
-| `DUMP_DATE` | current UTC date | Metadata dump date |
+| `DUMP_DATE` | dump sidecar/file date | Metadata dump date |
 | `PROPERTY_CONSTRAINT_PIDS` | `P2302` | Comma-separated claim-property IDs to drop for `P*` textification |
 
 ### HF publishing
 
 | Variable | Default | Description |
 |---|---|---|
-| `HF_BRANCH` | UTC timestamp | Branch for cleaned WD dataset uploads |
+| `HF_BRANCH` | dump date (`YYYYMMDD`) | Branch for cleaned WD dataset uploads |
 | `VECTOR_HF_BRANCH` | `HF_BRANCH` | Branch for vector dataset uploads |
 | `WD_HF_API_PATH` | `./API_tokens/wd_hf_api.json` | WD dataset token/repo config |
 | `VECTORS_HF_API_PATH` | `./API_tokens/vectors_hf_api.json` | Vector dataset token/repo config |
 
-When `WD_LANGS` is set, branch names are suffixed per language (`<branch>-en`, `<branch>-de`, ...).
+All languages use the configured vector dataset branch.
 
 ### External service connectivity
 
@@ -223,4 +224,5 @@ docker compose \
 
 - If all `SAVE_*` flags are `false`, the run exits without processing.
 - `main.py` checks network reachability to Wikibase and label DB before processing dump passes.
+- `DELETE_STALE_VECTORS=true` prompts before deleting AstraDB documents and their local cache entries.
 - Hugging Face uploads run in a background uploader process and use temporary cache dirs that are cleaned after each chunk.

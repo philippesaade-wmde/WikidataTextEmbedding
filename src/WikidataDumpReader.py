@@ -106,8 +106,22 @@ class WikidataDumpReader:
             if reporter_p:
                 reporter_p.start()
 
-            # Wait for all processes to finish
-            producer_p.join()
+            while producer_p.is_alive():
+                producer_p.join(timeout=0.2)
+                failed_consumers = [
+                    cp
+                    for cp in consumer_ps
+                    if cp.exitcode is not None
+                ]
+                if failed_consumers:
+                    details = ", ".join(
+                        f"pid={cp.pid} exitcode={cp.exitcode}"
+                        for cp in failed_consumers
+                    )
+                    raise RuntimeError(
+                        f"Consumer exited before producer completed ({details})"
+                    )
+
             if producer_p.exitcode != 0:
                 raise RuntimeError(f"Producer failed with exit code {producer_p.exitcode}")
 

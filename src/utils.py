@@ -29,7 +29,7 @@ def check_wdtextifier_stack():
         raise RuntimeError("Cannot reach WD Textifier's Label Database.") from e
 
 
-def normalize_last_updated(value):
+def normalize_datetime(value):
     """Normalize timestamps to naive UTC datetime."""
     if isinstance(value, datetime):
         dt = value

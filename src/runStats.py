@@ -79,6 +79,12 @@ class RunStatsTracker:
     def set_language_stats(self, lang, lang_stats):
         self.stats["stages"]["vectors_by_language"][lang] = lang_stats
 
+    def get_language_stats(self, lang, defaults=None):
+        lang_stats = self.stats["stages"]["vectors_by_language"].setdefault(lang, {})
+        if defaults:
+            lang_stats.update(defaults)
+        return lang_stats
+
     def add_summary(self):
         languages_stats = self.stats["stages"].get("vectors_by_language", {}).values()
         total_vector_create_items = 0

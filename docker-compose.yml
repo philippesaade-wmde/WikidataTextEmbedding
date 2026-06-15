@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     environment:
       WD_LANG: ${WD_LANG:-en}
+      WD_LANGS: ${WD_LANGS:-}
       FALLBACK_LANG: ${FALLBACK_LANG:-en}
       WIKIBASE_HOST: ${WIKIBASE_HOST:-wikibase}
       WIKIBASE_PORT: ${WIKIBASE_PORT:-80}
@@ -19,11 +20,20 @@ services:
       SAVE_WD_TO_HF: ${SAVE_WD_TO_HF:-false}
       SAVE_TO_VECTORDB: ${SAVE_TO_VECTORDB:-false}
       SAVE_VECTORS_TO_HF: ${SAVE_VECTORS_TO_HF:-false}
+      DELETE_STALE_VECTORS: ${DELETE_STALE_VECTORS:-false}
       FORCE_DOWNLOAD_DUMP: ${FORCE_DOWNLOAD_DUMP:-false}
       DUMP_PATH: ${DUMP_PATH:-data/wd_dump.gz}
+      DUMP_DATE: ${DUMP_DATE:-}
+      NUM_PROCESSES: ${NUM_PROCESSES:-4}
       READER_QUEUE_SIZE: ${READER_QUEUE_SIZE:-128}
       READER_BATCH_SIZE: ${READER_BATCH_SIZE:-16}
       HF_CHUNK_SIZE: ${HF_CHUNK_SIZE:-10000}
+      HF_BATCH_SIZE: ${HF_BATCH_SIZE:-32}
+      HF_QUEUE_SIZE: ${HF_QUEUE_SIZE:-128}
+      HF_BRANCH: ${HF_BRANCH:-}
+      VECTOR_HF_BRANCH: ${VECTOR_HF_BRANCH:-}
+      PROPERTY_CONSTRAINT_PIDS: ${PROPERTY_CONSTRAINT_PIDS:-P2302}
+      RUN_STATS_PATH: ${RUN_STATS_PATH:-data/run_stats.json}
       JINA_API_PATH: /workspace/API_tokens/jina_api.json
       ASTRA_API_PATH: /workspace/API_tokens/datastax_api.json
       WD_HF_API_PATH: /workspace/API_tokens/wd_hf_api.json

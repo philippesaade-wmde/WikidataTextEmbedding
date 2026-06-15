@@ -219,3 +219,31 @@ class AstraDBConnect:
                     time.sleep(1)
 
         return updated
+
+    def delete_documents(self, ids, batch_size=100):
+        """
+        Delete documents from AstraDB by ID. Returns the count of deleted documents.
+        """
+        if not ids:
+            return 0
+
+        item_ids = [id for id in ids if id.startswith("Q")]
+        prop_ids = [id for id in ids if id.startswith("P")]
+        deleted = 0
+
+        for collection, batch_ids in [
+            (self.item_collection, item_ids),
+            (self.property_collection, prop_ids),
+        ]:
+            for i in range(0, len(batch_ids), batch_size):
+                batch = batch_ids[i : i + batch_size]
+                while True:
+                    try:
+                        result = collection.delete_many({"_id": {"$in": batch}})
+                        deleted += result.deleted_count
+                        break
+                    except Exception:
+                        traceback.print_exc()
+                        time.sleep(1)
+
+        return deleted
