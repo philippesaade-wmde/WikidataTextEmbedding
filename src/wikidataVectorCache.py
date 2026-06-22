@@ -32,7 +32,8 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
     engine = create_engine(f'sqlite:///{data_dir}/{db_name}',
         pool_size=5,  # Limit the number of open connections
         max_overflow=10,  # Allow extra connections beyond pool_size
-        pool_recycle=10  # Recycle connections every 10 seconds
+        pool_recycle=10,  # Recycle connections every 10 seconds
+        connect_args={"timeout": 10_000}
     )
 
     Base = declarative_base()
