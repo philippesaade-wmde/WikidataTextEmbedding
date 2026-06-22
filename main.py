@@ -258,13 +258,13 @@ def create_dump_reader():
         reader.download()
         FORCE_DOWNLOAD_DUMP = False
 
-    if DUMP_DATE is None or HF_BRANCH is None or VECTOR_HF_BRANCH is None:
+    if not DUMP_DATE or not HF_BRANCH or not VECTOR_HF_BRANCH:
         dump_date = reader.get_dump_date()
-        if DUMP_DATE is None:
+        if not DUMP_DATE:
             DUMP_DATE = dump_date
-        if HF_BRANCH is None:
+        if not HF_BRANCH:
             HF_BRANCH = dump_date.replace("-", "")
-        if VECTOR_HF_BRANCH is None:
+        if not VECTOR_HF_BRANCH:
             VECTOR_HF_BRANCH = HF_BRANCH
     print(f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}")
 
