@@ -1,7 +1,7 @@
 """
 SQLite cache for Wikidata vector embeddings pushed to AstraDB.
 """
-from sqlalchemy import Column, Text, DateTime, create_engine, text
+from sqlalchemy import Column, DateTime, Index, Text, create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator
@@ -41,6 +41,11 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
 
     class VectorCache(Base):
         __tablename__ = 'vectors'
+        __table_args__ = (
+            Index("idx_vectors_wdid", "wdid"),
+            Index("idx_vectors_last_dump_id", "last_dump", "id"),
+        )
+
         id = Column(Text, primary_key=True)
         vector = Column(VectorType)
         lang = Column(Text)
