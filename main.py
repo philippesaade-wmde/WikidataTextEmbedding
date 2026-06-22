@@ -266,6 +266,7 @@ def create_dump_reader():
             HF_BRANCH = dump_date.replace("-", "")
         if VECTOR_HF_BRANCH is None:
             VECTOR_HF_BRANCH = HF_BRANCH
+        print(f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}")
 
     return reader
 
