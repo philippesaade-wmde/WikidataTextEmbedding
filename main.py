@@ -97,6 +97,7 @@ def item_to_text(item, label_factory=None):
         label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
 
     last_modified = item.get("modified")
+    property_datatype = item.get("datatype") if item["id"].startswith("P") else None
 
     normalizer = JSONNormalizer(
         item["id"],
@@ -123,21 +124,24 @@ def item_to_text(item, label_factory=None):
         TEXT_TOKENIZER = JinaAITokenizer()
     chunks = chunk_item_text(item, TEXT_TOKENIZER, max_length=1024, lang=LANG)
 
+    metadata = {
+        "Label": item.label,
+        "Description": item.description,
+        "QID" if item.id.startswith("Q") else "PID": item.id,
+        "Language": LANG,
+        "InstanceOf": extract_instanceof(item),
+        "Properties": extract_pids(item),
+        "LastModified": last_modified,
+        "DumpDate": DUMP_DATE,
+    }
+    if item.id.startswith("P"):
+        metadata["DataType"] = property_datatype
+
     return [
         {
             "_id": f"{item.id}_{LANG}_{i + 1}",
             "content": chunk,
-            "metadata": {
-                "Label": item.label,
-                "Description": item.description,
-                "QID" if item.id.startswith("Q") else "PID": item.id,
-                "ChunkID": i + 1,
-                "Language": LANG,
-                "InstanceOf": extract_instanceof(item),
-                "Properties": extract_pids(item),
-                "LastModified": last_modified,
-                "DumpDate": DUMP_DATE,
-            },
+            "metadata": metadata,
         }
         for i, chunk in enumerate(chunks)
     ]
