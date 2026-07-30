@@ -5,9 +5,10 @@ from WikidataTextifier.src import JSONNormalizer, LazyLabelFactory, WikidataLabe
 from src.JinaAI import JinaAIAPIEmbedder, JinaAITokenizer
 from src.WikidataDumpReader import WikidataDumpReader
 from src.WikidataFilter import (
-    WikidataItemFilter,
+    WikidataNoSitelinkFilter,
     WikidataPropertyFilter,
     WikidataScholarlyArticleFilter,
+    WikidataSitelinkFilter,
 )
 from src.WikidataJSONCleaner import WikidataJSONCleaner
 from src.utils import (
@@ -18,7 +19,7 @@ from src.utils import (
 )
 from src.runStats import RunStatsTracker
 from src.wikidataHuggingFace import WikidataHFDatasetPublisher
-from src.wikidataVectorCache import WikidataVectorCache
+from src.wikidataVectorCache import get_db_connection
 from src.wikidataVectorDB import AstraDBConnect
 
 
@@ -50,19 +51,42 @@ PROPERTY_CONSTRAINT_PIDS = tuple(
 SAVE_WD_TO_HF = os.environ.get("SAVE_WD_TO_HF", "false").lower() == "true"
 SAVE_VECTORS_TO_HF = os.environ.get("SAVE_VECTORS_TO_HF", "false").lower() == "true"
 SAVE_TO_VECTORDB = os.environ.get("SAVE_TO_VECTORDB", "false").lower() == "true"
+SAVE_SITELINK_VECTORS = os.environ.get("SAVE_SITELINK_VECTORS", "true").lower() == "true"
+SAVE_NOSITELINK_VECTORS = os.environ.get("SAVE_NOSITELINK_VECTORS", "true").lower() == "true"
 SAVE_LABELS = os.environ.get("SAVE_LABELS", "false").lower() == "true"
 DELETE_STALE_VECTORS = os.environ.get("DELETE_STALE_VECTORS", "false").lower() == "true"
 FORCE_DOWNLOAD_DUMP = os.environ.get("FORCE_DOWNLOAD_DUMP", "false").lower() == "true"
 RUN_STATS_PATH = os.environ.get("RUN_STATS_PATH", "data/run_stats.json")
+
+VECTOR_TARGETS = []
+if SAVE_SITELINK_VECTORS:
+    VECTOR_TARGETS.extend((
+        {
+            "entity_type": "items",
+            "counter_prefix": "vector",
+        },
+        {
+            "entity_type": "properties",
+            "counter_prefix": "vector",
+        },
+    ))
+if SAVE_NOSITELINK_VECTORS:
+    VECTOR_TARGETS.append({
+        "entity_type": "items_nositelinks",
+        "counter_prefix": "vector_nositelinks",
+    })
+VECTOR_TARGETS = tuple(VECTOR_TARGETS)
+VECTOR_ENTITY_TYPES = tuple(target["entity_type"] for target in VECTOR_TARGETS)
 
 
 # ---- Process-local runtime state ----
 TEXT_PROPERTY_FILTER = None
 TEXT_TOKENIZER = None
 VECTOR_ITEM_FILTER = None
+VECTOR_NOSITELINK_FILTER = None
 VECTOR_EMBEDDER = None
-VECTORCACHE = None
-ASTRADB = None
+VECTOR_CACHES = None
+ASTRADBS = None
 HF_PUBLISHER = None
 WD_HF_SCHOLARLY_FILTER = None
 LABEL_DB_READY = False
@@ -192,38 +216,34 @@ def save_vectors_to_hf():
     if HF_PUBLISHER is None:
         raise RuntimeError("HF publisher is not initialized in this process.")
 
-    vector_cache = WikidataVectorCache(lang=LANG, data_dir="./data/Wikidata/")
     total = 0
-    for vectors in vector_cache.iter_batches(batch_size=HF_CHUNK_SIZE):
-        existing_ids = HF_PUBLISHER.existing_ids([vector.get("id") for vector in vectors if vector and vector.get("id")])
-        if existing_ids:
-            vectors = [vector for vector in vectors if vector and vector.get("id") not in existing_ids]
-        total += HF_PUBLISHER.publish_vector_batch(vectors)
+    for entity_type in VECTOR_ENTITY_TYPES:
+        vector_cache = get_db_connection(
+            lang=LANG,
+            entity_type=entity_type,
+            data_dir="./data/Wikidata/",
+        )
+        for vectors in vector_cache.iter_batches(batch_size=HF_CHUNK_SIZE):
+            existing_ids = HF_PUBLISHER.existing_ids([
+                vector.get("id") for vector in vectors if vector and vector.get("id")
+            ])
+            if existing_ids:
+                vectors = [vector for vector in vectors if vector and vector.get("id") not in existing_ids]
+            total += HF_PUBLISHER.publish_vector_batch(vectors)
     return total
 
 
-def push_to_vectorDB(items, label_factory=None):
-    global VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB
-
-    if any(x is None for x in (VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB)):
-        init_worker(enable_vector=True)
-
+def push_vector_batch(items, vector_cache, astra_db, counter_prefix, label_factory=None):
+    to_update, to_create = vector_cache.filter_for_update(items)
     if STATS_TRACKER is not None:
-        STATS_TRACKER.counter_add("vector_input_items", len(items))
-    items = [item for item in items if VECTOR_ITEM_FILTER.filter(item)]
-    if STATS_TRACKER is not None:
-        STATS_TRACKER.counter_add("vector_filtered_items", len(items))
-
-    to_update, to_create = VECTORCACHE.filter_for_update(items)
-    if STATS_TRACKER is not None:
-        STATS_TRACKER.counter_add("vector_update_items", len(to_update))
-        STATS_TRACKER.counter_add("vector_create_items", len(to_create))
+        STATS_TRACKER.counter_add(f"{counter_prefix}_update_items", len(to_update))
+        STATS_TRACKER.counter_add(f"{counter_prefix}_create_items", len(to_create))
 
     if DUMP_DATE:
         changed_ids = {item['id'] for item in to_update + to_create}
         unchanged_ids = [item['id'] for item in items if item['id'] not in changed_ids]
         if unchanged_ids:
-            VECTORCACHE.touch_last_dump(unchanged_ids, DUMP_DATE)
+            vector_cache.touch_last_dump(unchanged_ids, DUMP_DATE)
 
     if label_factory is None:
         label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
@@ -241,44 +261,128 @@ def push_to_vectorDB(items, label_factory=None):
         return 0
 
     if STATS_TRACKER is not None:
-        STATS_TRACKER.counter_add("vector_candidate_docs", len(all_docs))
+        STATS_TRACKER.counter_add(f"{counter_prefix}_candidate_docs", len(all_docs))
 
     vectors = VECTOR_EMBEDDER.embed_documents([doc["content"] for doc in all_docs])
     for doc, vector in zip(all_docs, vectors):
         doc["$vector"] = vector
 
-    created_ids = ASTRADB.create_documents(to_create_docs)
+    created_ids = astra_db.create_documents(to_create_docs)
     not_created_docs = [doc for doc in to_create_docs if doc["_id"] not in created_ids]
     to_update_docs.extend(not_created_docs)
-    updated_ids = ASTRADB.update_documents(to_update_docs)
+    updated_ids = astra_db.update_documents(to_update_docs)
     all_ids = set(created_ids) | set(updated_ids)
     if STATS_TRACKER is not None:
-        STATS_TRACKER.counter_add("vector_created_docs", len(created_ids))
-        STATS_TRACKER.counter_add("vector_updated_docs", len(updated_ids))
-        STATS_TRACKER.counter_add("vector_saved_docs", len(all_ids))
+        STATS_TRACKER.counter_add(f"{counter_prefix}_created_docs", len(created_ids))
+        STATS_TRACKER.counter_add(f"{counter_prefix}_updated_docs", len(updated_ids))
+        STATS_TRACKER.counter_add(f"{counter_prefix}_saved_docs", len(all_ids))
 
     to_cache = [doc for doc in all_docs if doc["_id"] in all_ids]
-    VECTORCACHE.add_astra_doc(to_cache, dump_date=DUMP_DATE)
+    vector_cache.add_astra_doc(to_cache, dump_date=DUMP_DATE)
     if STATS_TRACKER is not None:
-        STATS_TRACKER.counter_add("vector_cached_docs", len(to_cache))
+        STATS_TRACKER.counter_add(f"{counter_prefix}_cached_docs", len(to_cache))
     return len(all_ids)
+
+
+def push_to_vectorDB(items, label_factory=None):
+    global VECTOR_ITEM_FILTER, VECTOR_NOSITELINK_FILTER
+    global VECTOR_EMBEDDER, VECTOR_CACHES
+    global ASTRADBS
+
+    if any(x is None for x in (
+        VECTOR_ITEM_FILTER,
+        VECTOR_NOSITELINK_FILTER,
+        VECTOR_EMBEDDER,
+        VECTOR_CACHES,
+        ASTRADBS,
+    )):
+        init_worker(enable_vector=True)
+
+    if STATS_TRACKER is not None:
+        STATS_TRACKER.counter_add("vector_input_items", len(items))
+
+    batches = []
+    for target in VECTOR_TARGETS:
+        entity_type = target["entity_type"]
+        if entity_type == "items":
+            target_items = [
+                item
+                for item in items
+                if item.get("id", "").startswith("Q")
+                and VECTOR_ITEM_FILTER.filter(item)
+            ]
+        elif entity_type == "properties":
+            target_items = [
+                item
+                for item in items
+                if item.get("id", "").startswith("P")
+                and VECTOR_ITEM_FILTER.filter(item)
+            ]
+        elif entity_type == "items_nositelinks":
+            target_items = [item for item in items if VECTOR_NOSITELINK_FILTER.filter(item)]
+        else:
+            raise ValueError(f"Unknown vector entity type: {entity_type}")
+        batches.append((target, target_items))
+
+    if STATS_TRACKER is not None:
+        for target, target_items in batches:
+            STATS_TRACKER.counter_add(
+                f"{target['counter_prefix']}_filtered_items",
+                len(target_items),
+            )
+
+    if label_factory is None and any(target_items for _, target_items in batches):
+        label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
+
+    saved = 0
+    for target, target_items in batches:
+        entity_type = target["entity_type"]
+        saved += push_vector_batch(
+            target_items,
+            VECTOR_CACHES[entity_type],
+            ASTRADBS[entity_type],
+            target["counter_prefix"],
+            label_factory=label_factory,
+        )
+    return saved
 
 
 # ---- Worker and batch handlers ----
 def init_worker(enable_vector=False):
     global LABEL_DB_READY
-    global VECTORCACHE, ASTRADB
-    global VECTOR_ITEM_FILTER, VECTOR_EMBEDDER
+    global VECTOR_CACHES, ASTRADBS
+    global VECTOR_ITEM_FILTER, VECTOR_NOSITELINK_FILTER, VECTOR_EMBEDDER
 
     if not LABEL_DB_READY:
         WikidataLabel.initialize_database()
         LABEL_DB_READY = True
 
-    if enable_vector and any(x is None for x in (VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB)):
-        VECTOR_ITEM_FILTER = WikidataItemFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
+    if enable_vector and any(x is None for x in (
+        VECTOR_ITEM_FILTER,
+        VECTOR_NOSITELINK_FILTER,
+        VECTOR_EMBEDDER,
+        VECTOR_CACHES,
+        ASTRADBS,
+    )):
+        VECTOR_ITEM_FILTER = WikidataSitelinkFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
+        VECTOR_NOSITELINK_FILTER = WikidataNoSitelinkFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
         VECTOR_EMBEDDER = JinaAIAPIEmbedder(config_path=JINA_API_PATH)
-        VECTORCACHE = WikidataVectorCache(lang=LANG, data_dir="./data/Wikidata/")
-        ASTRADB = AstraDBConnect(lang=LANG, config_path=ASTRA_API_PATH)
+        VECTOR_CACHES = {
+            entity_type: get_db_connection(
+                lang=LANG,
+                entity_type=entity_type,
+                data_dir="./data/Wikidata/",
+            )
+            for entity_type in VECTOR_ENTITY_TYPES
+        }
+        ASTRADBS = {
+            entity_type: AstraDBConnect(
+                lang=LANG,
+                entity_type=entity_type,
+                config_path=ASTRA_API_PATH,
+            )
+            for entity_type in VECTOR_ENTITY_TYPES
+        }
 
 
 # ---- Orchestration ----
@@ -341,7 +445,8 @@ def reset_runtime_state():
     global dump_reader, HF_PUBLISHER
     global WD_HF_SCHOLARLY_FILTER
     global TEXT_PROPERTY_FILTER, TEXT_TOKENIZER
-    global VECTOR_ITEM_FILTER, VECTOR_EMBEDDER, VECTORCACHE, ASTRADB
+    global VECTOR_ITEM_FILTER, VECTOR_NOSITELINK_FILTER, VECTOR_EMBEDDER
+    global VECTOR_CACHES, ASTRADBS
 
     dump_reader = None
     HF_PUBLISHER = None
@@ -349,9 +454,10 @@ def reset_runtime_state():
     TEXT_PROPERTY_FILTER = None
     TEXT_TOKENIZER = None
     VECTOR_ITEM_FILTER = None
+    VECTOR_NOSITELINK_FILTER = None
     VECTOR_EMBEDDER = None
-    VECTORCACHE = None
-    ASTRADB = None
+    VECTOR_CACHES = None
+    ASTRADBS = None
     if STATS_TRACKER is not None:
         STATS_TRACKER.clear_counters()
 
@@ -481,6 +587,14 @@ def run_vectordb_stages():
             "vector_updated_docs",
             "vector_saved_docs",
             "vector_cached_docs",
+            "vector_nositelinks_filtered_items",
+            "vector_nositelinks_update_items",
+            "vector_nositelinks_create_items",
+            "vector_nositelinks_candidate_docs",
+            "vector_nositelinks_created_docs",
+            "vector_nositelinks_updated_docs",
+            "vector_nositelinks_saved_docs",
+            "vector_nositelinks_cached_docs",
         ))
         stage_exc = None
         try:
@@ -507,25 +621,52 @@ def run_vectordb_stages():
             raise stage_exc
 
         if DELETE_STALE_VECTORS:
-            cache = WikidataVectorCache(lang=LANG, data_dir="./data/Wikidata/")
-            stale_count = cache.count_stale(DUMP_DATE)
-            print(f"\nStale cache entries for '{lang}' (last_dump < {DUMP_DATE}): {stale_count}")
+            stale_targets = []
+            for target in VECTOR_TARGETS:
+                entity_type = target["entity_type"]
+                cache = get_db_connection(
+                    lang=LANG,
+                    entity_type=entity_type,
+                    data_dir="./data/Wikidata/",
+                )
+                stale_targets.append((target, cache, cache.count_stale(DUMP_DATE)))
+
+            stale_count_by_entity_type = {
+                target["entity_type"]: stale_count
+                for target, _, stale_count in stale_targets
+            }
+            total_stale_count = sum(stale_count_by_entity_type.values())
+            print(f"\nStale cache entries for '{lang}' (last_dump < {DUMP_DATE}): {total_stale_count}")
+            for entity_type, stale_count in stale_count_by_entity_type.items():
+                print(f"  {entity_type}: {stale_count}")
             try:
                 confirmed = input("Delete these entries? [y/N]: ").strip().lower() == "y"
             except EOFError:
                 confirmed = False
-            astra_deleted = 0
+            astra_deleted_by_entity_type = {}
             if confirmed:
-                astra = AstraDBConnect(lang=LANG, config_path=ASTRA_API_PATH)
-                for batch_ids in cache.iter_stale_batches(DUMP_DATE):
-                    astra_deleted += astra.delete_documents(batch_ids)
-                print(f"Deleted {astra_deleted} documents from AstraDB and {stale_count} entries from local cache.")
+                for target, cache, _ in stale_targets:
+                    entity_type = target["entity_type"]
+                    astra = AstraDBConnect(
+                        lang=LANG,
+                        entity_type=entity_type,
+                        config_path=ASTRA_API_PATH,
+                    )
+                    astra_deleted_by_entity_type[entity_type] = 0
+                    for batch_ids in cache.iter_stale_batches(DUMP_DATE):
+                        astra_deleted_by_entity_type[entity_type] += astra.delete_documents(batch_ids)
+                print(
+                    f"Deleted {sum(astra_deleted_by_entity_type.values())} documents from AstraDB "
+                    f"and {total_stale_count} entries from local cache."
+                )
             else:
                 print("Deletion skipped.")
             lang_stats["stale_deletion"] = {
-                "stale_count": stale_count,
+                "stale_count": total_stale_count,
+                "stale_count_by_entity_type": stale_count_by_entity_type,
                 "confirmed": confirmed,
-                "astra_deleted": astra_deleted,
+                "astra_deleted": sum(astra_deleted_by_entity_type.values()),
+                "astra_deleted_by_entity_type": astra_deleted_by_entity_type,
             }
 
 
@@ -599,6 +740,7 @@ def run_vectors_to_hf_stage():
         vectors_to_hf_stats = {
             "branch": VECTOR_HF_BRANCH,
             "data_dir": f"{HF_DATA_DIR}/{LANG}",
+            "entity_types": list(VECTOR_ENTITY_TYPES),
             "rows_pushed": int(vectors_pushed),
         }
         lang_stats["vectors_to_hf"] = vectors_to_hf_stats
@@ -606,6 +748,16 @@ def run_vectors_to_hf_stage():
 
 def run_pipeline():
     global STATS_TRACKER
+
+    if (
+        SAVE_TO_VECTORDB
+        or DELETE_STALE_VECTORS
+        or (SAVE_VECTORS_TO_HF and not MERGE_HF_TO_MAIN)
+    ) and not VECTOR_TARGETS:
+        raise ValueError(
+            "At least one of SAVE_SITELINK_VECTORS or SAVE_NOSITELINK_VECTORS must be true "
+            "when running vector stages."
+        )
 
     if (
         SAVE_LABELS
@@ -632,6 +784,9 @@ def run_pipeline():
         "save_wd_to_hf": SAVE_WD_TO_HF,
         "save_to_vectordb": SAVE_TO_VECTORDB,
         "save_vectors_to_hf": SAVE_VECTORS_TO_HF,
+        "save_sitelink_vectors": SAVE_SITELINK_VECTORS,
+        "save_nositelink_vectors": SAVE_NOSITELINK_VECTORS,
+        "vector_entity_types": list(VECTOR_ENTITY_TYPES),
         "merge_hf_to_main": MERGE_HF_TO_MAIN,
         "delete_stale_vectors": DELETE_STALE_VECTORS,
         "hf_branch": HF_BRANCH,

@@ -25,6 +25,8 @@ When `WD_LANGS` is set and `SAVE_LABELS=true`, labels are saved once, then secon
 - is not disambiguation (`P31 != Q4167410`)
 - has at least one sitelink ending in `wiki`
 
+The vector DB pass also writes a separate no-sitelink item collection for `Q*` items that pass the basic item filter, have no sitelink ending in `wiki`, and are not scholarly articles.
+
 ### Property (`P*`) filter for vectorization
 
 - has label in `WD_LANG`, `FALLBACK_LANG`, or `mul`
@@ -73,6 +75,8 @@ By default, `main.py` reads token/config files from `API_tokens/`:
 | `SAVE_WD_TO_HF` | `false` | Run second pass: publish cleaned Wikidata JSON to HF |
 | `SAVE_TO_VECTORDB` | `false` | Run second pass: embed and push to Astra DB + local vector cache |
 | `SAVE_VECTORS_TO_HF` | `false` | Publish local cached vectors to HF |
+| `SAVE_SITELINK_VECTORS` | `true` | Include Wikipedia-sitelink items and properties in vector DB/cache/HF stages |
+| `SAVE_NOSITELINK_VECTORS` | `true` | Include non-scholarly items without Wikipedia sitelinks in vector DB/cache/HF stages |
 | `DELETE_STALE_VECTORS` | `false` | Prompt to delete vectors absent from the current dump pass |
 | `FORCE_DOWNLOAD_DUMP` | `false` | Force re-download of dump |
 
@@ -214,8 +218,13 @@ docker compose \
 
 ## Output Artifacts
 
+- Astra DB collections:
+  - `{COLLECTION_PREFIX}_items_<lang>`
+  - `{COLLECTION_PREFIX}_items_nositelinks_<lang>`
+  - `{COLLECTION_PREFIX}_properties_<lang>`
 - Local vector cache SQLite files:
   - `data/Wikidata/sqlite_wikidata_vectors_items_<lang>.db`
+  - `data/Wikidata/sqlite_wikidata_vectors_items_nositelinks_<lang>.db`
   - `data/Wikidata/sqlite_wikidata_vectors_properties_<lang>.db`
 - Hugging Face dataset uploads:
   - cleaned Wikidata rows under `data/` (branch `HF_BRANCH`)

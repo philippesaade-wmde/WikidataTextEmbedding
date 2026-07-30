@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument("--lang", required=True)
     parser.add_argument(
         "--entity-type",
-        choices=("items", "properties"),
+        choices=("items", "items_nositelinks", "properties"),
         default="items",
     )
     parser.add_argument("--data-dir", default="data/Wikidata")
@@ -45,12 +45,8 @@ def main():
     if not database_path.is_file():
         raise SystemExit(f"Local database not found: {database_path}")
 
-    astra = AstraDBConnect(lang=args.lang, config_path=args.config)
-    collection = (
-        astra.item_collection
-        if args.entity_type == "items"
-        else astra.property_collection
-    )
+    astra = AstraDBConnect(lang=args.lang, entity_type=args.entity_type, config_path=args.config)
+    collection = astra.collection
 
     with sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True) as local:
         local_count = local.execute("SELECT COUNT(*) FROM vectors").fetchone()[0]

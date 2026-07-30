@@ -6,7 +6,7 @@ from multiprocessing import get_context
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.WikidataDumpReader import WikidataDumpReader
-from src.WikidataFilter import WikidataItemFilter, WikidataScholarlyArticleFilter
+from src.WikidataFilter import WikidataScholarlyArticleFilter, WikidataSitelinkFilter
 
 
 # ---- Runtime config ----
@@ -73,7 +73,7 @@ def collect_stats(items):
 
         for lang in langs:
             if lang not in ITEM_FILTERS:
-                ITEM_FILTERS[lang] = WikidataItemFilter(lang=lang, fallback_lang=lang)
+                ITEM_FILTERS[lang] = WikidataSitelinkFilter(lang=lang, fallback_lang=lang)
                 SCHOLARLY_FILTERS[lang] = WikidataScholarlyArticleFilter(lang=lang, fallback_lang=lang)
 
             has_label = ITEM_FILTERS[lang].has_label(entity)

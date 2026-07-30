@@ -44,7 +44,7 @@ def init_backfill_worker() -> None:
         return
     languages = WD_LANGS or (LANG,)
     ASTRADBS = {
-        lang: AstraDBConnect(lang=lang, config_path=ASTRA_API_PATH)
+        lang: AstraDBConnect(lang=lang, entity_type="properties", config_path=ASTRA_API_PATH)
         for lang in languages
     }
 
@@ -71,7 +71,7 @@ def backfill_property_datatypes(items: list[dict]) -> None:
         for datatype, property_ids in pids_by_datatype.items():
             for start in range(0, len(property_ids), UPDATE_BATCH_SIZE):
                 property_batch = property_ids[start : start + UPDATE_BATCH_SIZE]
-                result = astra.property_collection.update_many(
+                result = astra.collection.update_many(
                     {"metadata.PID": {"$in": property_batch}},
                     {"$set": {"metadata.DataType": datatype}},
                 )

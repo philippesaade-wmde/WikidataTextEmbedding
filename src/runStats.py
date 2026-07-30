@@ -90,6 +90,9 @@ class RunStatsTracker:
         total_vector_create_items = 0
         total_vector_update_items = 0
         total_vector_saved_docs = 0
+        total_vector_nositelinks_create_items = 0
+        total_vector_nositelinks_update_items = 0
+        total_vector_nositelinks_saved_docs = 0
         total_vector_hf_rows = 0
 
         for lang_stats in languages_stats:
@@ -97,6 +100,15 @@ class RunStatsTracker:
             total_vector_create_items += int(vectordb_stats.get("vector_create_items", 0))
             total_vector_update_items += int(vectordb_stats.get("vector_update_items", 0))
             total_vector_saved_docs += int(vectordb_stats.get("vector_saved_docs", 0))
+            total_vector_nositelinks_create_items += int(
+                vectordb_stats.get("vector_nositelinks_create_items", 0)
+            )
+            total_vector_nositelinks_update_items += int(
+                vectordb_stats.get("vector_nositelinks_update_items", 0)
+            )
+            total_vector_nositelinks_saved_docs += int(
+                vectordb_stats.get("vector_nositelinks_saved_docs", 0)
+            )
 
             vectors_to_hf_stats = lang_stats.get("vectors_to_hf", {})
             total_vector_hf_rows += int(vectors_to_hf_stats.get("rows_pushed", 0))
@@ -106,6 +118,9 @@ class RunStatsTracker:
             "vector_create_items": total_vector_create_items,
             "vector_update_items": total_vector_update_items,
             "vector_saved_docs": total_vector_saved_docs,
+            "vector_nositelinks_create_items": total_vector_nositelinks_create_items,
+            "vector_nositelinks_update_items": total_vector_nositelinks_update_items,
+            "vector_nositelinks_saved_docs": total_vector_nositelinks_saved_docs,
             "vector_hf_rows_pushed": total_vector_hf_rows,
             "total_errors": int(self.stats["errors"].get("total", 0)),
         }

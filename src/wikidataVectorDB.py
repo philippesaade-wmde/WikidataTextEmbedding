@@ -15,14 +15,11 @@ class AstraDBConnect:
             entity_type="items",
             config_path: str = "../API_tokens/datastax_api.json"):
         """
-        Initialize the AstraDBConnect object with the corresponding embedding model.
+        Initialize a connection to one AstraDB vector collection.
 
         Parameters:
         - datastax_token (dict): Credentials for DataStax Astra, including token and API endpoint.
-        - collection_name (str): Name of the collection (table) where data is stored.
-        - model (str): The embedding model to use. Default is 'jina'.
-        - batch_size (int): Number of documents to accumul
-        ate before pushing to AstraDB. Default is 8.
+        - entity_type (str): Collection suffix, for example items, items_nositelinks, or properties.
         """
         datastax_token = {}
         if config_path and os.path.exists(config_path):
@@ -63,22 +60,12 @@ class AstraDBConnect:
         database0 = client.get_database(ASTRA_DB_API_ENDPOINT)
 
         collection_names = database0.list_collection_names()
-        item_collection_name = f"{collection_prefix}_items_{lang}"
-        property_collection_name = f"{collection_prefix}_properties_{lang}"
+        collection_name = f"{collection_prefix}_{entity_type}_{lang}"
 
-        if item_collection_name in collection_names:
-            self.item_collection = database0.get_collection(
-                f"{collection_prefix}_items_{lang}"
-            )
+        if collection_name in collection_names:
+            self.collection = database0.get_collection(collection_name)
         else:
-            raise ValueError(f"Collection {item_collection_name} not found in Astra DB.")
-
-        if property_collection_name in collection_names:
-            self.property_collection = database0.get_collection(
-                f"{collection_prefix}_properties_{lang}"
-            )
-        else:
-            raise ValueError(f"Collection {property_collection_name} not found in Astra DB.")
+            raise ValueError(f"Collection {collection_name} not found in Astra DB.")
 
     def create_documents(self, docs):
         """
@@ -104,55 +91,26 @@ class AstraDBConnect:
         if len(docs) == 0:
             return []
 
-        items = [
-            doc for doc in docs \
-                if doc['_id'].startswith("Q")
-        ]
-        properties = [
-            doc for doc in docs \
-                if doc['_id'].startswith("P")
-        ]
-
         inserted_ids = []
 
-        if items:
-            while True:
-                try:
-                    result = self.item_collection.insert_many(items)
-                    inserted_ids.extend(result.inserted_ids)
-                    break
-                except CollectionInsertManyException as e:
-                    # Ignore duplicate IDs error.
-                    traceback.print_exc()
-                    inserted_ids.extend(e.inserted_ids)
-                    break
-                except DataAPIResponseException:
-                    # Data is too large to publish in Bulk
-                    traceback.print_exc()
-                    inserted_ids.extend(self.update_documents(items))
-                    break
-                except Exception:
-                    traceback.print_exc()
-                    time.sleep(1)
-
-        if properties:
-            while True:
-                try:
-                    result = self.property_collection.insert_many(properties)
-                    inserted_ids.extend(result.inserted_ids)
-                    break
-                except CollectionInsertManyException as e:
-                    # Ignore duplicate IDs error.
-                    traceback.print_exc()
-                    inserted_ids.extend(e.inserted_ids)
-                    break
-                except DataAPIResponseException:
-                    # Data is too large to publish in Bulk
-                    inserted_ids.extend(self.update_documents(properties))
-                    break
-                except Exception:
-                    traceback.print_exc()
-                    time.sleep(1)
+        while True:
+            try:
+                result = self.collection.insert_many(docs)
+                inserted_ids.extend(result.inserted_ids)
+                break
+            except CollectionInsertManyException as e:
+                # Ignore duplicate IDs error.
+                traceback.print_exc()
+                inserted_ids.extend(e.inserted_ids)
+                break
+            except DataAPIResponseException:
+                # Data is too large to publish in Bulk
+                traceback.print_exc()
+                inserted_ids.extend(self.update_documents(docs))
+                break
+            except Exception:
+                traceback.print_exc()
+                time.sleep(1)
 
         return inserted_ids
 
@@ -189,17 +147,10 @@ class AstraDBConnect:
                 if key != "_id"
             }
 
-            if docid.startswith("Q"):
-                collection = self.item_collection
-            elif docid.startswith("P"):
-                collection = self.property_collection
-            else:
-                continue
-
             truncated = False
             while True:
                 try:
-                    collection.update_one(
+                    self.collection.update_one(
                         filter={"_id": docid},
                         update={
                             "$set": update_fields
@@ -227,23 +178,17 @@ class AstraDBConnect:
         if not ids:
             return 0
 
-        item_ids = [id for id in ids if id.startswith("Q")]
-        prop_ids = [id for id in ids if id.startswith("P")]
         deleted = 0
 
-        for collection, batch_ids in [
-            (self.item_collection, item_ids),
-            (self.property_collection, prop_ids),
-        ]:
-            for i in range(0, len(batch_ids), batch_size):
-                batch = batch_ids[i : i + batch_size]
-                while True:
-                    try:
-                        result = collection.delete_many({"_id": {"$in": batch}})
-                        deleted += result.deleted_count
-                        break
-                    except Exception:
-                        traceback.print_exc()
-                        time.sleep(1)
+        for i in range(0, len(ids), batch_size):
+            batch = ids[i : i + batch_size]
+            while True:
+                try:
+                    result = self.collection.delete_many({"_id": {"$in": batch}})
+                    deleted += result.deleted_count
+                    break
+                except Exception:
+                    traceback.print_exc()
+                    time.sleep(1)
 
         return deleted
