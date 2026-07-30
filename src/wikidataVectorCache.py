@@ -2,6 +2,7 @@
 SQLite cache for Wikidata vector embeddings pushed to AstraDB.
 """
 from sqlalchemy import Column, DateTime, Index, Text, create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator
@@ -217,8 +218,13 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
                 cursor = batch[-1]["id"]
 
 
-    # Create tables if they don't already exist.
-    Base.metadata.create_all(engine)
+    # Multiple workers can initialize a new cache at once. One may create the
+    # table after another worker has already passed SQLAlchemy's checkfirst.
+    try:
+        Base.metadata.create_all(engine)
+    except OperationalError as exc:
+        if "already exists" not in str(exc).lower():
+            raise
 
     # Migrate existing tables: add last_dump column if absent.
     with engine.connect() as conn:
