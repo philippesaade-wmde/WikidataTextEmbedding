@@ -3,6 +3,13 @@ import os
 from WikidataTextifier.src import JSONNormalizer, LazyLabelFactory, WikidataLabel
 
 from src.JinaAI import JinaAIAPIEmbedder, JinaAITokenizer
+from src.runStats import RunStatsTracker
+from src.utils import (
+    check_wdtextifier_stack,
+    chunk_item_text,
+    extract_instanceof,
+    extract_pids,
+)
 from src.WikidataDumpReader import WikidataDumpReader
 from src.WikidataFilter import (
     WikidataNoSitelinkFilter,
@@ -10,18 +17,10 @@ from src.WikidataFilter import (
     WikidataScholarlyArticleFilter,
     WikidataSitelinkFilter,
 )
-from src.WikidataJSONCleaner import WikidataJSONCleaner
-from src.utils import (
-    check_wdtextifier_stack,
-    chunk_item_text,
-    extract_instanceof,
-    extract_pids,
-)
-from src.runStats import RunStatsTracker
 from src.wikidataHuggingFace import WikidataHFDatasetPublisher
+from src.WikidataJSONCleaner import WikidataJSONCleaner
 from src.wikidataVectorCache import get_db_connection
 from src.wikidataVectorDB import AstraDBConnect
-
 
 # ---- Runtime config ----
 READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 128))

@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.WikidataDumpReader import WikidataDumpReader
 from src.WikidataFilter import WikidataScholarlyArticleFilter
 
-
 # ---- Runtime config ----
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
 NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))

@@ -1,12 +1,13 @@
+import json
+import os
 import time
 import traceback
-import os
+
 from astrapy import DataAPIClient
+from astrapy.api_options import APIOptions, TimeoutOptions
 from astrapy.exceptions.collection_exceptions import CollectionInsertManyException
 from astrapy.exceptions.data_api_exceptions import DataAPIResponseException
-from astrapy.api_options import APIOptions, TimeoutOptions
 
-import json
 
 class AstraDBConnect:
     def __init__(

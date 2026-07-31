@@ -1,7 +1,9 @@
+import json
+import os
+
 import requests
 from bs4 import BeautifulSoup
-import os
-import json
+
 
 class WikidataPropertyFilter:
     """Class to fetch and store the sorted properties."""

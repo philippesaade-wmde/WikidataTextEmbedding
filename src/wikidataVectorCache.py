@@ -1,14 +1,16 @@
 """
 SQLite cache for Wikidata vector embeddings pushed to AstraDB.
 """
+import base64
+from datetime import datetime
+
+import numpy as np
 from sqlalchemy import Column, DateTime, Index, Text, create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator
-import base64
-import numpy as np
-from datetime import datetime
+
 from src.utils import normalize_datetime
 
 

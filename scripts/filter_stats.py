@@ -1,13 +1,12 @@
 import json
 import os
 import sys
-from pathlib import Path
 from multiprocessing import get_context
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.WikidataDumpReader import WikidataDumpReader
 from src.WikidataFilter import WikidataScholarlyArticleFilter, WikidataSitelinkFilter
-
 
 # ---- Runtime config ----
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")

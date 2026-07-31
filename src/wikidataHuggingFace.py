@@ -1,12 +1,15 @@
-import orjson
 import json
 import os
 import re
-import traceback
 import tempfile
-from time import sleep
-from multiprocessing import Process, Queue, Value, Lock
+import traceback
+from multiprocessing import Lock, Process, Queue, Value
 from queue import Full
+from time import sleep
+
+import orjson
+import pyarrow as pa
+import pyarrow.parquet as pq
 from huggingface_hub import (
     CommitOperationAdd,
     CommitOperationCopy,
@@ -15,8 +18,7 @@ from huggingface_hub import (
     hf_hub_download,
 )
 from huggingface_hub.errors import HfHubHTTPError
-import pyarrow as pa
-import pyarrow.parquet as pq
+
 from src.hfUploadCheckpoint import HFUploadCheckpoint
 
 

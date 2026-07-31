@@ -16,13 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.WikidataDumpReader import WikidataDumpReader
 from src.wikidataVectorDB import AstraDBConnect
 
-
 # ---- Runtime config ----
 READER_QUEUE_SIZE = int(os.environ.get("DATATYPE_BACKFILL_READER_QUEUE_SIZE", 8))
 READER_BATCH_SIZE = int(os.environ.get("DATATYPE_BACKFILL_READER_BATCH_SIZE", 500))
 NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
-LANG = os.environ.get("WD_LANG", os.environ.get("LANG", "en"))
+LANG = os.environ.get("WD_LANG", "en")
 WD_LANGS = tuple(lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip())
 ASTRA_API_PATH = os.environ.get("ASTRA_API_PATH", "./API_tokens/datastax_api.json")
 UPDATE_BATCH_SIZE = int(os.environ.get("DATATYPE_BACKFILL_BATCH_SIZE", 250))

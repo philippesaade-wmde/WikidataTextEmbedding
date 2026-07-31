@@ -1,8 +1,9 @@
 
-from copy import copy
 import os
 import socket
+from copy import copy
 from datetime import datetime, timezone
+
 
 def check_wdtextifier_stack():
     WIKIBASE_HOST = os.environ.get("WIKIBASE_HOST", "wikibase")

@@ -1,9 +1,10 @@
-import json
-import requests
-import numpy as np
 import base64
+import json
 import os
 from typing import List
+
+import numpy as np
+import requests
 
 
 class JinaAITokenizer:
@@ -35,8 +36,8 @@ class JinaAIEmbedder:
         - embedding_dim (int): Dimensionality of the embeddings.
             Defaults to 1024.
         """
-        from transformers import AutoModel
         import torch
+        from transformers import AutoModel
 
         self.torch = torch
 
@@ -218,8 +219,8 @@ class JinaAIReranker:
         Raises:
         - ValueError: If max_tokens is greater than 1024.
         """
-        from transformers import AutoModelForSequenceClassification
         import torch
+        from transformers import AutoModelForSequenceClassification
 
         self.torch = torch
 

@@ -1,14 +1,16 @@
-import gzip
 import bz2
+import gzip
 import os
-import orjson
 import time
-from datetime import datetime, timezone
-from tqdm import tqdm
-import requests
 import traceback
+from datetime import datetime, timezone
 from multiprocessing import cpu_count, get_context
 from queue import Full
+
+import orjson
+import requests
+from tqdm import tqdm
+
 
 class WikidataDumpReader:
     def __init__(
