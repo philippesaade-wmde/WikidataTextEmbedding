@@ -1,3 +1,5 @@
+"""Run Wikidata dump processing and publishing stages."""
+
 import os
 
 from WikidataTextifier.src import JSONNormalizer, LazyLabelFactory, WikidataLabel
@@ -23,35 +25,45 @@ from src.wikidataVectorCache import get_db_connection
 from src.wikidataVectorDB import AstraDBConnect
 
 # ---- Runtime config ----
-READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 128))
-READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", 16))
-NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
+READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", "128"))
+READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", "16"))
+NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", "4"))
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
 LANG = os.environ.get("WD_LANG", os.environ.get("LANG", "en"))
 FALLBACK_LANG = os.environ.get("FALLBACK_LANG", LANG)
-WD_LANGS = tuple(lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip())
+WD_LANGS = tuple(
+    lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip()
+)
 
 JINA_API_PATH = os.environ.get("JINA_API_PATH", "./API_tokens/jina_api.json")
 ASTRA_API_PATH = os.environ.get("ASTRA_API_PATH", "./API_tokens/datastax_api.json")
 WD_HF_API_PATH = os.environ.get("WD_HF_API_PATH", "./API_tokens/wd_hf_api.json")
-VECTORS_HF_API_PATH = os.environ.get("VECTORS_HF_API_PATH", "./API_tokens/vectors_hf_api.json")
+VECTORS_HF_API_PATH = os.environ.get(
+    "VECTORS_HF_API_PATH", "./API_tokens/vectors_hf_api.json"
+)
 HF_DATA_DIR = os.environ.get("HF_DATA_DIR", "data")
-HF_CHUNK_SIZE = int(os.environ.get("HF_CHUNK_SIZE", 1000))
-HF_BATCH_SIZE = int(os.environ.get("HF_BATCH_SIZE", 32))
-HF_QUEUE_SIZE = int(os.environ.get("HF_QUEUE_SIZE", 128))
+HF_CHUNK_SIZE = int(os.environ.get("HF_CHUNK_SIZE", "1000"))
+HF_BATCH_SIZE = int(os.environ.get("HF_BATCH_SIZE", "32"))
+HF_QUEUE_SIZE = int(os.environ.get("HF_QUEUE_SIZE", "128"))
 DUMP_DATE = os.environ.get("DUMP_DATE")
 HF_BRANCH = os.environ.get("HF_BRANCH")
 VECTOR_HF_BRANCH = os.environ.get("VECTOR_HF_BRANCH")
 MERGE_HF_TO_MAIN = os.environ.get("MERGE_HF_TO_MAIN", "false").lower() == "true"
 PROPERTY_CONSTRAINT_PIDS = tuple(
-    pid.strip() for pid in os.environ.get("PROPERTY_CONSTRAINT_PIDS", "P2302").split(",") if pid.strip()
+    pid.strip()
+    for pid in os.environ.get("PROPERTY_CONSTRAINT_PIDS", "P2302").split(",")
+    if pid.strip()
 )
 
 SAVE_WD_TO_HF = os.environ.get("SAVE_WD_TO_HF", "false").lower() == "true"
 SAVE_VECTORS_TO_HF = os.environ.get("SAVE_VECTORS_TO_HF", "false").lower() == "true"
 SAVE_TO_VECTORDB = os.environ.get("SAVE_TO_VECTORDB", "false").lower() == "true"
-SAVE_SITELINK_VECTORS = os.environ.get("SAVE_SITELINK_VECTORS", "true").lower() == "true"
-SAVE_NOSITELINK_VECTORS = os.environ.get("SAVE_NOSITELINK_VECTORS", "true").lower() == "true"
+SAVE_SITELINK_VECTORS = (
+    os.environ.get("SAVE_SITELINK_VECTORS", "true").lower() == "true"
+)
+SAVE_NOSITELINK_VECTORS = (
+    os.environ.get("SAVE_NOSITELINK_VECTORS", "true").lower() == "true"
+)
 SAVE_LABELS = os.environ.get("SAVE_LABELS", "false").lower() == "true"
 DELETE_STALE_VECTORS = os.environ.get("DELETE_STALE_VECTORS", "false").lower() == "true"
 FORCE_DOWNLOAD_DUMP = os.environ.get("FORCE_DOWNLOAD_DUMP", "false").lower() == "true"
@@ -59,21 +71,25 @@ RUN_STATS_PATH = os.environ.get("RUN_STATS_PATH", "data/run_stats.json")
 
 VECTOR_TARGETS = []
 if SAVE_SITELINK_VECTORS:
-    VECTOR_TARGETS.extend((
-        {
-            "entity_type": "items",
-            "counter_prefix": "vector",
-        },
-        {
-            "entity_type": "properties",
-            "counter_prefix": "vector",
-        },
-    ))
+    VECTOR_TARGETS.extend(
+        (
+            {
+                "entity_type": "items",
+                "counter_prefix": "vector",
+            },
+            {
+                "entity_type": "properties",
+                "counter_prefix": "vector",
+            },
+        )
+    )
 if SAVE_NOSITELINK_VECTORS:
-    VECTOR_TARGETS.append({
-        "entity_type": "items_nositelinks",
-        "counter_prefix": "vector_nositelinks",
-    })
+    VECTOR_TARGETS.append(
+        {
+            "entity_type": "items_nositelinks",
+            "counter_prefix": "vector_nositelinks",
+        }
+    )
 VECTOR_TARGETS = tuple(VECTOR_TARGETS)
 VECTOR_ENTITY_TYPES = tuple(target["entity_type"] for target in VECTOR_TARGETS)
 
@@ -95,16 +111,20 @@ STATS_TRACKER = None
 
 # ---- Transformation steps ----
 def save_labels(items):
+    """Persist Wikidata labels for a batch of dump items."""
     data = {item["id"]: {"labels": item["labels"]} for item in items}
     if not data:
         return
     compressed = WikidataLabel._compress_labels(data)
-    WikidataLabel.add_bulk_labels([{"id": qid, "labels": labels} for qid, labels in compressed.items()])
+    WikidataLabel.add_bulk_labels(
+        [{"id": qid, "labels": labels} for qid, labels in compressed.items()]
+    )
     if STATS_TRACKER is not None:
         STATS_TRACKER.counter_add("labels_saved", len(data))
 
 
 def item_to_json(item, label_factory=None):
+    """Convert a dump item into cleaned JSON with resolved labels."""
     if label_factory is None:
         label_factory = LazyLabelFactory(lang=LANG, fallback_lang=FALLBACK_LANG)
 
@@ -114,6 +134,7 @@ def item_to_json(item, label_factory=None):
 
 
 def item_to_text(item, label_factory=None):
+    """Convert a dump item into chunked text documents for vector storage."""
     global TEXT_PROPERTY_FILTER, TEXT_TOKENIZER
 
     if label_factory is None:
@@ -139,7 +160,9 @@ def item_to_text(item, label_factory=None):
     if TEXT_PROPERTY_FILTER is None:
         TEXT_PROPERTY_FILTER = WikidataPropertyFilter()
     drop_claim_pids = PROPERTY_CONSTRAINT_PIDS if item.id.startswith("P") else ()
-    item = TEXT_PROPERTY_FILTER.sort_and_filter_textifier(item, drop_claim_pids=drop_claim_pids)
+    item = TEXT_PROPERTY_FILTER.sort_and_filter_textifier(
+        item, drop_claim_pids=drop_claim_pids
+    )
 
     label_factory.resolve_all()
 
@@ -172,6 +195,7 @@ def item_to_text(item, label_factory=None):
 
 # ---- Sink steps ----
 def push_to_hf(items, label_factory=None):
+    """Publish filtered dump items to the configured Hugging Face dataset."""
     global WD_HF_SCHOLARLY_FILTER
 
     if HF_PUBLISHER is None:
@@ -192,9 +216,7 @@ def push_to_hf(items, label_factory=None):
         )
     before_filter = len(items)
     items = [
-        item
-        for item in items
-        if WD_HF_SCHOLARLY_FILTER.not_scholarly_article(item)
+        item for item in items if WD_HF_SCHOLARLY_FILTER.not_scholarly_article(item)
     ]
     if STATS_TRACKER is not None:
         STATS_TRACKER.counter_add("wd_hf_skipped_scholarly", before_filter - len(items))
@@ -212,6 +234,7 @@ def push_to_hf(items, label_factory=None):
 
 
 def save_vectors_to_hf():
+    """Publish cached vector rows from SQLite to Hugging Face."""
     if HF_PUBLISHER is None:
         raise RuntimeError("HF publisher is not initialized in this process.")
 
@@ -223,24 +246,31 @@ def save_vectors_to_hf():
             data_dir="./data/Wikidata/",
         )
         for vectors in vector_cache.iter_batches(batch_size=HF_CHUNK_SIZE):
-            existing_ids = HF_PUBLISHER.existing_ids([
-                vector.get("id") for vector in vectors if vector and vector.get("id")
-            ])
+            existing_ids = HF_PUBLISHER.existing_ids(
+                [vector.get("id") for vector in vectors if vector and vector.get("id")]
+            )
             if existing_ids:
-                vectors = [vector for vector in vectors if vector and vector.get("id") not in existing_ids]
+                vectors = [
+                    vector
+                    for vector in vectors
+                    if vector and vector.get("id") not in existing_ids
+                ]
             total += HF_PUBLISHER.publish_vector_batch(vectors)
     return total
 
 
-def push_vector_batch(items, vector_cache, astra_db, counter_prefix, label_factory=None):
+def push_vector_batch(
+    items, vector_cache, astra_db, counter_prefix, label_factory=None
+):
+    """Embed and persist one filtered item batch to AstraDB and the local cache."""
     to_update, to_create = vector_cache.filter_for_update(items)
     if STATS_TRACKER is not None:
         STATS_TRACKER.counter_add(f"{counter_prefix}_update_items", len(to_update))
         STATS_TRACKER.counter_add(f"{counter_prefix}_create_items", len(to_create))
 
     if DUMP_DATE:
-        changed_ids = {item['id'] for item in to_update + to_create}
-        unchanged_ids = [item['id'] for item in items if item['id'] not in changed_ids]
+        changed_ids = {item["id"] for item in to_update + to_create}
+        unchanged_ids = [item["id"] for item in items if item["id"] not in changed_ids]
         if unchanged_ids:
             vector_cache.touch_last_dump(unchanged_ids, DUMP_DATE)
 
@@ -284,17 +314,17 @@ def push_vector_batch(items, vector_cache, astra_db, counter_prefix, label_facto
 
 
 def push_to_vectorDB(items, label_factory=None):
-    global VECTOR_ITEM_FILTER, VECTOR_NOSITELINK_FILTER
-    global VECTOR_EMBEDDER, VECTOR_CACHES
-    global ASTRADBS
-
-    if any(x is None for x in (
-        VECTOR_ITEM_FILTER,
-        VECTOR_NOSITELINK_FILTER,
-        VECTOR_EMBEDDER,
-        VECTOR_CACHES,
-        ASTRADBS,
-    )):
+    """Filter a dump batch and push matching entities to vector storage."""
+    if any(
+        x is None
+        for x in (
+            VECTOR_ITEM_FILTER,
+            VECTOR_NOSITELINK_FILTER,
+            VECTOR_EMBEDDER,
+            VECTOR_CACHES,
+            ASTRADBS,
+        )
+    ):
         init_worker(enable_vector=True)
 
     if STATS_TRACKER is not None:
@@ -318,7 +348,9 @@ def push_to_vectorDB(items, label_factory=None):
                 and VECTOR_ITEM_FILTER.filter(item)
             ]
         elif entity_type == "items_nositelinks":
-            target_items = [item for item in items if VECTOR_NOSITELINK_FILTER.filter(item)]
+            target_items = [
+                item for item in items if VECTOR_NOSITELINK_FILTER.filter(item)
+            ]
         else:
             raise ValueError(f"Unknown vector entity type: {entity_type}")
         batches.append((target, target_items))
@@ -348,6 +380,7 @@ def push_to_vectorDB(items, label_factory=None):
 
 # ---- Worker and batch handlers ----
 def init_worker(enable_vector=False):
+    """Initialize process-local label and vector resources."""
     global LABEL_DB_READY
     global VECTOR_CACHES, ASTRADBS
     global VECTOR_ITEM_FILTER, VECTOR_NOSITELINK_FILTER, VECTOR_EMBEDDER
@@ -356,15 +389,22 @@ def init_worker(enable_vector=False):
         WikidataLabel.initialize_database()
         LABEL_DB_READY = True
 
-    if enable_vector and any(x is None for x in (
-        VECTOR_ITEM_FILTER,
-        VECTOR_NOSITELINK_FILTER,
-        VECTOR_EMBEDDER,
-        VECTOR_CACHES,
-        ASTRADBS,
-    )):
-        VECTOR_ITEM_FILTER = WikidataSitelinkFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
-        VECTOR_NOSITELINK_FILTER = WikidataNoSitelinkFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
+    if enable_vector and any(
+        x is None
+        for x in (
+            VECTOR_ITEM_FILTER,
+            VECTOR_NOSITELINK_FILTER,
+            VECTOR_EMBEDDER,
+            VECTOR_CACHES,
+            ASTRADBS,
+        )
+    ):
+        VECTOR_ITEM_FILTER = WikidataSitelinkFilter(
+            lang=LANG, fallback_lang=FALLBACK_LANG
+        )
+        VECTOR_NOSITELINK_FILTER = WikidataNoSitelinkFilter(
+            lang=LANG, fallback_lang=FALLBACK_LANG
+        )
         VECTOR_EMBEDDER = JinaAIAPIEmbedder(config_path=JINA_API_PATH)
         VECTOR_CACHES = {
             entity_type: get_db_connection(
@@ -386,6 +426,7 @@ def init_worker(enable_vector=False):
 
 # ---- Orchestration ----
 def create_dump_reader():
+    """Create the dump reader and resolve dump-derived branch names."""
     global FORCE_DOWNLOAD_DUMP, DUMP_DATE, HF_BRANCH, VECTOR_HF_BRANCH
 
     check_wdtextifier_stack()
@@ -409,12 +450,15 @@ def create_dump_reader():
             HF_BRANCH = dump_date.replace("-", "")
         if not VECTOR_HF_BRANCH:
             VECTOR_HF_BRANCH = HF_BRANCH
-    print(f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}")
+    print(
+        f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}"
+    )
 
     return reader
 
 
 def resolve_hf_branches_without_dump():
+    """Resolve Hugging Face branch names without opening the dump reader."""
     global DUMP_DATE, HF_BRANCH, VECTOR_HF_BRANCH
 
     if not DUMP_DATE and (not HF_BRANCH or not VECTOR_HF_BRANCH):
@@ -430,17 +474,22 @@ def resolve_hf_branches_without_dump():
         VECTOR_HF_BRANCH = HF_BRANCH
 
     if SAVE_WD_TO_HF and MERGE_HF_TO_MAIN and not HF_BRANCH:
-        raise ValueError("Set HF_BRANCH or DUMP_DATE when MERGE_HF_TO_MAIN=true and SAVE_WD_TO_HF=true.")
+        raise ValueError(
+            "Set HF_BRANCH or DUMP_DATE when MERGE_HF_TO_MAIN=true and SAVE_WD_TO_HF=true."
+        )
     if SAVE_VECTORS_TO_HF and MERGE_HF_TO_MAIN and not VECTOR_HF_BRANCH:
         raise ValueError(
             "Set VECTOR_HF_BRANCH, HF_BRANCH, or DUMP_DATE when MERGE_HF_TO_MAIN=true "
             "and SAVE_VECTORS_TO_HF=true."
         )
 
-    print(f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}")
+    print(
+        f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}"
+    )
 
 
 def reset_runtime_state():
+    """Clear process-local caches and counters between pipeline stages."""
     global dump_reader, HF_PUBLISHER
     global WD_HF_SCHOLARLY_FILTER
     global TEXT_PROPERTY_FILTER, TEXT_TOKENIZER
@@ -462,7 +511,7 @@ def reset_runtime_state():
 
 
 def run_labels_stage():
-    global STATS_TRACKER
+    """Run the label extraction stage."""
     stage_name = "labels"
     print("Running label pass")
     reset_runtime_state()
@@ -482,16 +531,19 @@ def run_labels_stage():
         STATS_TRACKER.clear_counters()
 
     stage_stats = STATS_TRACKER.read_counters(counters)
-    stage_stats.update({
-        "entities_processed": int(reader.iterations.value),
-        "handler_errors": int(reader.handler_errors.value),
-    })
+    stage_stats.update(
+        {
+            "entities_processed": int(reader.iterations.value),
+            "handler_errors": int(reader.handler_errors.value),
+        }
+    )
     STATS_TRACKER.set_stage_stats("labels", stage_stats)
     STATS_TRACKER.record_error(stage_name, stage_stats["handler_errors"])
 
 
 def run_wd_to_hf_stage():
-    global HF_PUBLISHER, STATS_TRACKER
+    """Run the Wikidata dump to Hugging Face dataset stage."""
+    global HF_PUBLISHER
 
     stage_name = "wd_to_hf"
     reset_runtime_state()
@@ -512,11 +564,13 @@ def run_wd_to_hf_stage():
 
     print("Running full Wikidata -> HF pass")
     reader = create_dump_reader()
-    counters = STATS_TRACKER.start_counters((
-        "wd_hf_rows",
-        "wd_hf_skipped_existing",
-        "wd_hf_skipped_scholarly",
-    ))
+    counters = STATS_TRACKER.start_counters(
+        (
+            "wd_hf_rows",
+            "wd_hf_skipped_existing",
+            "wd_hf_skipped_scholarly",
+        )
+    )
     HF_PUBLISHER = WikidataHFDatasetPublisher(
         branch=HF_BRANCH,
         config_path=WD_HF_API_PATH,
@@ -542,18 +596,21 @@ def run_wd_to_hf_stage():
             HF_PUBLISHER.flush()
 
     stage_stats = STATS_TRACKER.read_counters(counters)
-    stage_stats.update({
-        "branch": HF_BRANCH,
-        "data_dir": HF_DATA_DIR,
-        "entities_processed": int(reader.iterations.value),
-        "handler_errors": int(reader.handler_errors.value),
-    })
+    stage_stats.update(
+        {
+            "branch": HF_BRANCH,
+            "data_dir": HF_DATA_DIR,
+            "entities_processed": int(reader.iterations.value),
+            "handler_errors": int(reader.handler_errors.value),
+        }
+    )
     STATS_TRACKER.set_stage_stats("wd_to_hf", stage_stats)
     STATS_TRACKER.record_error(stage_name, stage_stats["handler_errors"])
 
 
 def run_vectordb_stages():
-    global LANG, FALLBACK_LANG, VECTOR_HF_BRANCH, HF_PUBLISHER, STATS_TRACKER
+    """Run AstraDB vector upsert and optional stale-deletion stages."""
+    global LANG, FALLBACK_LANG
 
     languages = WD_LANGS or (LANG,)
     default_fallback = os.environ.get("FALLBACK_LANG", FALLBACK_LANG)
@@ -568,33 +625,38 @@ def run_vectordb_stages():
         LANG = lang
         FALLBACK_LANG = fallback
         reset_runtime_state()
-        lang_stats = STATS_TRACKER.get_language_stats(lang, {
-            "language": lang,
-            "fallback_lang": fallback,
-            "vector_hf_branch": VECTOR_HF_BRANCH,
-        })
+        lang_stats = STATS_TRACKER.get_language_stats(
+            lang,
+            {
+                "language": lang,
+                "fallback_lang": fallback,
+                "vector_hf_branch": VECTOR_HF_BRANCH,
+            },
+        )
 
         stage_name = f"vectordb:{lang}"
         reader = create_dump_reader()
-        counters = STATS_TRACKER.start_counters((
-            "vector_input_items",
-            "vector_filtered_items",
-            "vector_update_items",
-            "vector_create_items",
-            "vector_candidate_docs",
-            "vector_created_docs",
-            "vector_updated_docs",
-            "vector_saved_docs",
-            "vector_cached_docs",
-            "vector_nositelinks_filtered_items",
-            "vector_nositelinks_update_items",
-            "vector_nositelinks_create_items",
-            "vector_nositelinks_candidate_docs",
-            "vector_nositelinks_created_docs",
-            "vector_nositelinks_updated_docs",
-            "vector_nositelinks_saved_docs",
-            "vector_nositelinks_cached_docs",
-        ))
+        counters = STATS_TRACKER.start_counters(
+            (
+                "vector_input_items",
+                "vector_filtered_items",
+                "vector_update_items",
+                "vector_create_items",
+                "vector_candidate_docs",
+                "vector_created_docs",
+                "vector_updated_docs",
+                "vector_saved_docs",
+                "vector_cached_docs",
+                "vector_nositelinks_filtered_items",
+                "vector_nositelinks_update_items",
+                "vector_nositelinks_create_items",
+                "vector_nositelinks_candidate_docs",
+                "vector_nositelinks_created_docs",
+                "vector_nositelinks_updated_docs",
+                "vector_nositelinks_saved_docs",
+                "vector_nositelinks_cached_docs",
+            )
+        )
         stage_exc = None
         try:
             reader.run(
@@ -603,15 +665,17 @@ def run_vectordb_stages():
                 init_consumer=init_worker,
                 init_consumer_args=(True,),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             stage_exc = exc
             STATS_TRACKER.record_error(stage_name, exc=exc)
         finally:
             vectordb_stats = STATS_TRACKER.read_counters(counters)
-            vectordb_stats.update({
-                "entities_processed": int(reader.iterations.value),
-                "handler_errors": int(reader.handler_errors.value),
-            })
+            vectordb_stats.update(
+                {
+                    "entities_processed": int(reader.iterations.value),
+                    "handler_errors": int(reader.handler_errors.value),
+                }
+            )
             lang_stats["vectordb"] = vectordb_stats
             STATS_TRACKER.record_error(stage_name, vectordb_stats["handler_errors"])
             STATS_TRACKER.clear_counters()
@@ -635,11 +699,15 @@ def run_vectordb_stages():
                 for target, _, stale_count in stale_targets
             }
             total_stale_count = sum(stale_count_by_entity_type.values())
-            print(f"\nStale cache entries for '{lang}' (last_dump < {DUMP_DATE}): {total_stale_count}")
+            print(
+                f"\nStale cache entries for '{lang}' (last_dump < {DUMP_DATE}): {total_stale_count}"
+            )
             for entity_type, stale_count in stale_count_by_entity_type.items():
                 print(f"  {entity_type}: {stale_count}")
             try:
-                confirmed = input("Delete these entries? [y/N]: ").strip().lower() == "y"
+                confirmed = (
+                    input("Delete these entries? [y/N]: ").strip().lower() == "y"
+                )
             except EOFError:
                 confirmed = False
             astra_deleted_by_entity_type = {}
@@ -653,7 +721,9 @@ def run_vectordb_stages():
                     )
                     astra_deleted_by_entity_type[entity_type] = 0
                     for batch_ids in cache.iter_stale_batches(DUMP_DATE):
-                        astra_deleted_by_entity_type[entity_type] += astra.delete_documents(batch_ids)
+                        astra_deleted_by_entity_type[entity_type] += (
+                            astra.delete_documents(batch_ids)
+                        )
                 print(
                     f"Deleted {sum(astra_deleted_by_entity_type.values())} documents from AstraDB "
                     f"and {total_stale_count} entries from local cache."
@@ -670,8 +740,8 @@ def run_vectordb_stages():
 
 
 def run_vectors_to_hf_stage():
-
-    global LANG, FALLBACK_LANG, VECTOR_HF_BRANCH, HF_PUBLISHER, STATS_TRACKER
+    """Publish locally cached vectors to a Hugging Face dataset branch."""
+    global LANG, FALLBACK_LANG, HF_PUBLISHER
 
     languages = WD_LANGS or (LANG,)
     default_fallback = os.environ.get("FALLBACK_LANG", FALLBACK_LANG)
@@ -690,11 +760,14 @@ def run_vectors_to_hf_stage():
                 f"FALLBACK_LANG_{lang.upper()}",
                 default_fallback or lang,
             )
-            lang_stats = STATS_TRACKER.get_language_stats(lang, {
-                "language": lang,
-                "fallback_lang": fallback,
-                "vector_hf_branch": VECTOR_HF_BRANCH,
-            })
+            lang_stats = STATS_TRACKER.get_language_stats(
+                lang,
+                {
+                    "language": lang,
+                    "fallback_lang": fallback,
+                    "vector_hf_branch": VECTOR_HF_BRANCH,
+                },
+            )
             lang_stats["vectors_to_hf"] = {
                 "branch": VECTOR_HF_BRANCH,
                 "merged_to_main": True,
@@ -713,11 +786,14 @@ def run_vectors_to_hf_stage():
         LANG = lang
         FALLBACK_LANG = fallback
         reset_runtime_state()
-        lang_stats = STATS_TRACKER.get_language_stats(lang, {
-            "language": lang,
-            "fallback_lang": fallback,
-            "vector_hf_branch": VECTOR_HF_BRANCH,
-        })
+        lang_stats = STATS_TRACKER.get_language_stats(
+            lang,
+            {
+                "language": lang,
+                "fallback_lang": fallback,
+                "vector_hf_branch": VECTOR_HF_BRANCH,
+            },
+        )
 
         stage_name = f"vectors_to_hf:{lang}"
         HF_PUBLISHER = WikidataHFDatasetPublisher(
@@ -746,6 +822,7 @@ def run_vectors_to_hf_stage():
 
 
 def run_pipeline():
+    """Run all enabled pipeline stages."""
     global STATS_TRACKER
 
     if (

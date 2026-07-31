@@ -4,6 +4,7 @@
 Example:
     WD_LANGS=en,de,fr,ar BACKFILL_APPLY=true \
         uv run python scripts/backfill_property_datatypes.py
+
 """
 
 import os
@@ -17,14 +18,16 @@ from src.WikidataDumpReader import WikidataDumpReader
 from src.wikidataVectorDB import AstraDBConnect
 
 # ---- Runtime config ----
-READER_QUEUE_SIZE = int(os.environ.get("DATATYPE_BACKFILL_READER_QUEUE_SIZE", 8))
-READER_BATCH_SIZE = int(os.environ.get("DATATYPE_BACKFILL_READER_BATCH_SIZE", 500))
-NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
+READER_QUEUE_SIZE = int(os.environ.get("DATATYPE_BACKFILL_READER_QUEUE_SIZE", "8"))
+READER_BATCH_SIZE = int(os.environ.get("DATATYPE_BACKFILL_READER_BATCH_SIZE", "500"))
+NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", "4"))
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
 LANG = os.environ.get("WD_LANG", "en")
-WD_LANGS = tuple(lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip())
+WD_LANGS = tuple(
+    lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip()
+)
 ASTRA_API_PATH = os.environ.get("ASTRA_API_PATH", "./API_tokens/datastax_api.json")
-UPDATE_BATCH_SIZE = int(os.environ.get("DATATYPE_BACKFILL_BATCH_SIZE", 250))
+UPDATE_BATCH_SIZE = int(os.environ.get("DATATYPE_BACKFILL_BATCH_SIZE", "250"))
 APPLY = os.environ.get("BACKFILL_APPLY", "false").lower() == "true"
 FORCE_DOWNLOAD_DUMP = os.environ.get("FORCE_DOWNLOAD_DUMP", "false").lower() == "true"
 
@@ -43,7 +46,9 @@ def init_backfill_worker() -> None:
         return
     languages = WD_LANGS or (LANG,)
     ASTRADBS = {
-        lang: AstraDBConnect(lang=lang, entity_type="properties", config_path=ASTRA_API_PATH)
+        lang: AstraDBConnect(
+            lang=lang, entity_type="properties", config_path=ASTRA_API_PATH
+        )
         for lang in languages
     }
 
@@ -61,7 +66,9 @@ def backfill_property_datatypes(items: list[dict]) -> None:
             pids_by_datatype[datatype].append(pid)
 
     with PROPERTY_COUNT.get_lock():
-        PROPERTY_COUNT.value += sum(len(property_ids) for property_ids in pids_by_datatype.values())
+        PROPERTY_COUNT.value += sum(
+            len(property_ids) for property_ids in pids_by_datatype.values()
+        )
     if not APPLY or not pids_by_datatype:
         return
 
@@ -75,7 +82,9 @@ def backfill_property_datatypes(items: list[dict]) -> None:
                     {"$set": {"metadata.DataType": datatype}},
                 )
                 update_info = result.update_info or {}
-                updated_documents += update_info.get("nModified", update_info.get("n", 0))
+                updated_documents += update_info.get(
+                    "nModified", update_info.get("n", 0)
+                )
 
     with UPDATED_DOCUMENT_COUNT.get_lock():
         UPDATED_DOCUMENT_COUNT.value += updated_documents

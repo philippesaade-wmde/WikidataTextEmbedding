@@ -1,3 +1,5 @@
+"""Store Hugging Face upload checkpoints in a local SQLite database."""
+
 import os
 
 from sqlalchemy import Column, Text, create_engine
@@ -9,13 +11,18 @@ Base = declarative_base()
 
 
 class UploadedID(Base):
+    """Represent one uploaded dataset row ID."""
+
     __tablename__ = "uploaded_ids"
 
     id = Column(Text, primary_key=True)
 
 
 class HFUploadCheckpoint:
+    """Track uploaded IDs for resumable Hugging Face dataset publishing."""
+
     def __init__(self, branch: str):
+        """Initialize the checkpoint database for a branch."""
         self.path = os.path.join(
             "data",
             "hf_checkpoints",
@@ -32,10 +39,12 @@ class HFUploadCheckpoint:
         Base.metadata.create_all(self.engine)
 
     def has_ids(self) -> bool:
+        """Return whether the checkpoint contains any uploaded IDs."""
         with self.Session() as session:
             return session.query(UploadedID.id).first() is not None
 
     def existing_ids(self, ids: list[str]) -> set[str]:
+        """Return IDs from the input list that already exist in the checkpoint."""
         ids = [id_ for id_ in ids if id_]
         if not ids:
             return set()
@@ -43,12 +52,15 @@ class HFUploadCheckpoint:
         found = set()
         with self.Session() as session:
             for start in range(0, len(ids), 900):
-                batch = ids[start:start + 900]
-                rows = session.query(UploadedID.id).filter(UploadedID.id.in_(batch)).all()
+                batch = ids[start : start + 900]
+                rows = (
+                    session.query(UploadedID.id).filter(UploadedID.id.in_(batch)).all()
+                )
                 found.update(row[0] for row in rows)
         return found
 
     def add_ids(self, ids: list[str]):
+        """Persist uploaded IDs, ignoring duplicates."""
         ids = [id_ for id_ in ids if id_]
         if not ids:
             return

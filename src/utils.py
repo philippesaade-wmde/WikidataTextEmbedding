@@ -1,3 +1,4 @@
+"""Utility helpers for textification, chunking, and timestamp normalization."""
 
 import os
 import socket
@@ -6,24 +7,23 @@ from datetime import datetime, timezone
 
 
 def check_wdtextifier_stack():
+    """Verify that the WD Textifier services are reachable."""
     WIKIBASE_HOST = os.environ.get("WIKIBASE_HOST", "wikibase")
-    WIKIBASE_PORT = int(os.environ.get("WIKIBASE_PORT", 80))
+    WIKIBASE_PORT = int(os.environ.get("WIKIBASE_PORT", "80"))
     TEXTIFIER_DB_HOST = os.environ.get("TEXTIFIER_DB_HOST", "db")
-    TEXTIFIER_DB_PORT = int(os.environ.get("TEXTIFIER_DB_PORT", os.environ.get("DB_PORT", 3306)))
+    TEXTIFIER_DB_PORT = int(
+        os.environ.get("TEXTIFIER_DB_PORT", os.environ.get("DB_PORT", "3306"))
+    )
 
     try:
-        with socket.create_connection(
-            (WIKIBASE_HOST, WIKIBASE_PORT),
-            timeout=3
-        ):
+        with socket.create_connection((WIKIBASE_HOST, WIKIBASE_PORT), timeout=3):
             pass
     except OSError as e:
         raise RuntimeError("Cannot reach WD Textifier's Wikibase.") from e
 
     try:
         with socket.create_connection(
-            (TEXTIFIER_DB_HOST, TEXTIFIER_DB_PORT),
-            timeout=3
+            (TEXTIFIER_DB_HOST, TEXTIFIER_DB_PORT), timeout=3
         ):
             pass
     except OSError as e:
@@ -81,10 +81,10 @@ def _trim_to_length(text, offsets, max_length):
     return text[: offsets[max_length - 1][1]]
 
 
-def chunk_item_text(item, tokenizer, max_length=1024, lang="en", sticky_property_ids=("P31",)):
-    """
-    Chunk text using the same strategy as src/wikidataEmbed.py::chunk_text.
-    """
+def chunk_item_text(
+    item, tokenizer, max_length=1024, lang="en", sticky_property_ids=("P31",)
+):
+    """Chunk text using the same strategy as src/wikidataEmbed.py::chunk_text."""
     entity_text = item.to_text(lang=lang)
     token_ids, offsets = _tokenize_with_offsets(entity_text, tokenizer)
 
@@ -150,12 +150,18 @@ def chunk_item_text(item, tokenizer, max_length=1024, lang="en", sticky_property
 
     return chunks
 
+
 def extract_instanceof(item, instanceof_pid="P31"):
-    instanceof = [claim.values for claim in item.claims if claim.property.id == instanceof_pid]
+    """Return instance-of entity IDs from a textified item."""
+    instanceof = [
+        claim.values for claim in item.claims if claim.property.id == instanceof_pid
+    ]
     if not instanceof:
         return []
 
     return [value.value.id for value in instanceof[0] if hasattr(value.value, "id")]
 
+
 def extract_pids(item):
+    """Return property IDs present in a textified item."""
     return [claim.property.id for claim in item.claims]

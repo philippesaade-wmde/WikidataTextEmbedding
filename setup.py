@@ -1,4 +1,6 @@
-from setuptools import setup, find_packages
+"""Package setup metadata for the local src package."""
+
+from setuptools import find_packages, setup
 
 setup(
     name="src",

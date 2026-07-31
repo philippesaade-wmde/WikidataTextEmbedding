@@ -1,3 +1,5 @@
+"""Collect per-language item filter statistics from a Wikidata dump."""
+
 import json
 import os
 import sys
@@ -10,9 +12,9 @@ from src.WikidataFilter import WikidataScholarlyArticleFilter, WikidataSitelinkF
 
 # ---- Runtime config ----
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
-NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
-READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 10))
-READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", 2000))
+NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", "4"))
+READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", "10"))
+READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", "2000"))
 OUTPUT_PATH = os.environ.get("OUTPUT_PATH", "data/filter_stats.json")
 
 
@@ -25,6 +27,7 @@ SHARED_LOCK = None
 
 # ---- Worker and batch handlers ----
 def init_worker():
+    """Initialize per-process filter instances."""
     global ITEM_FILTERS, SCHOLARLY_FILTERS
 
     ITEM_FILTERS = {}
@@ -32,8 +35,7 @@ def init_worker():
 
 
 def collect_stats(items):
-    global ITEM_FILTERS, SCHOLARLY_FILTERS, SHARED_STATS, SHARED_LOCK
-
+    """Collect filter counters for one dump-reader batch."""
     batch_stats = {
         "total_entities": 0,
         "total_properties": 0,
@@ -72,8 +74,12 @@ def collect_stats(items):
 
         for lang in langs:
             if lang not in ITEM_FILTERS:
-                ITEM_FILTERS[lang] = WikidataSitelinkFilter(lang=lang, fallback_lang=lang)
-                SCHOLARLY_FILTERS[lang] = WikidataScholarlyArticleFilter(lang=lang, fallback_lang=lang)
+                ITEM_FILTERS[lang] = WikidataSitelinkFilter(
+                    lang=lang, fallback_lang=lang
+                )
+                SCHOLARLY_FILTERS[lang] = WikidataScholarlyArticleFilter(
+                    lang=lang, fallback_lang=lang
+                )
 
             has_label = ITEM_FILTERS[lang].has_label(entity)
             has_content = ITEM_FILTERS[lang].has_content(entity)
@@ -106,7 +112,9 @@ def collect_stats(items):
             any_has_label = any_has_label or has_label
             any_has_content = any_has_content or has_content
             any_not_disambiguation = any_not_disambiguation or not_disambiguation
-            any_basic_filters = any_basic_filters or (has_label and has_content and not_disambiguation)
+            any_basic_filters = any_basic_filters or (
+                has_label and has_content and not_disambiguation
+            )
             any_item = any_item or item_ok
             any_scholarly = any_scholarly or scholarly_ok
 
@@ -133,21 +141,24 @@ def collect_stats(items):
 
 # ---- Orchestration ----
 def run_stats():
+    """Run the stats reader and write the merged filter report."""
     global SHARED_STATS, SHARED_LOCK
     ctx = get_context("fork")
     manager = ctx.Manager()
     SHARED_LOCK = manager.Lock()
-    SHARED_STATS = manager.dict({
-        "total_entities": 0,
-        "total_properties": 0,
-        "all:has_label": 0,
-        "all:has_content": 0,
-        "all:not_disambiguation": 0,
-        "all:basic_filters": 0,
-        "all:item": 0,
-        "all:scholarly": 0,
-        "all:common": 0,
-    })
+    SHARED_STATS = manager.dict(
+        {
+            "total_entities": 0,
+            "total_properties": 0,
+            "all:has_label": 0,
+            "all:has_content": 0,
+            "all:not_disambiguation": 0,
+            "all:basic_filters": 0,
+            "all:item": 0,
+            "all:scholarly": 0,
+            "all:common": 0,
+        }
+    )
 
     reader = WikidataDumpReader(
         DUMP_PATH,
@@ -166,7 +177,7 @@ def run_stats():
 
     langs = sorted(
         key.split(":", 1)[0]
-        for key in merged.keys()
+        for key in merged
         if ":" in key and not key.startswith("all:")
     )
     langs = sorted(set(langs))

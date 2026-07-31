@@ -1,41 +1,40 @@
+"""Embed and rank text with Jina models and APIs."""
+
 import base64
 import json
 import os
-from typing import List
 
 import numpy as np
 import requests
 
 
 class JinaAITokenizer:
+    """Load and forward calls to the Jina embeddings tokenizer."""
+
     def __init__(self):
+        """Load the pretrained tokenizer."""
         from transformers import AutoTokenizer
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            "jinaai/jina-embeddings-v3",
-            trust_remote_code=True
+            "jinaai/jina-embeddings-v3", trust_remote_code=True
         )
 
     def __call__(self, *args, **kwargs):
         """Forward calls to the wrapped tokenizer."""
         return self.tokenizer(*args, **kwargs)
 
-class JinaAIEmbedder:
-    def __init__(
-            self, passage_task="retrieval.passage",
-            query_task="retrieval.query", embedding_dim=512, device='cuda'):
-        """
-        Initializes the JinaAIEmbedder class with the model,
-        and task identifiers.
 
-        Parameters:
-        - passage_task (str): Task identifier for embedding documents.
-            Defaults to "retrieval.passage".
-        - query_task (str): Task identifier for embedding queries.
-            Defaults to "retrieval.query".
-        - embedding_dim (int): Dimensionality of the embeddings.
-            Defaults to 1024.
-        """
+class JinaAIEmbedder:
+    """Embed texts locally with the Jina embeddings model."""
+
+    def __init__(
+        self,
+        passage_task="retrieval.passage",
+        query_task="retrieval.query",
+        embedding_dim=512,
+        device="cuda",
+    ):
+        """Initialize the local Jina embedding model."""
         import torch
         from transformers import AutoModel
 
@@ -46,50 +45,28 @@ class JinaAIEmbedder:
         self.embedding_dim = embedding_dim
 
         self.model = AutoModel.from_pretrained(
-            "jinaai/jina-embeddings-v3",
-            trust_remote_code=True
+            "jinaai/jina-embeddings-v3", trust_remote_code=True
         ).to(device)
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """
-        Generates embeddings for a list of document (passage) texts.
-
-        Parameters:
-        - texts (List[str]): A list of document texts to embed.
-
-        Returns:
-        - List[List[float]]: A list of embedding vectors, each corresponding
-        to a document.
-        """
-
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed passage documents with the local model."""
         with self.torch.no_grad():
             embeddings = self.model.encode(
-                texts,
-                task=self.passage_task,
-                truncate_dim=self.embedding_dim
+                texts, task=self.passage_task, truncate_dim=self.embedding_dim
             )
 
         return embeddings.tolist()
 
-    def embed_query(self, text: str) -> List[float]:
-        """
-        Generates an embedding for a single query string.
-
-        Parameters:
-        - text (str): The query text to embed.
-
-        Returns:
-        - List[float]: The embedding vector corresponding to the query.
-        """
+    def embed_query(self, text: str) -> list[float]:
+        """Embed one query string with the local model."""
         with self.torch.no_grad():
             embedding = self.model.encode(
-                [text],
-                task=self.query_task,
-                truncate_dim=self.embedding_dim
+                [text], task=self.query_task, truncate_dim=self.embedding_dim
             )[0]
             return embedding.tolist()
 
-    def __call__(self, text: str, task: str) -> List[float]:
+    def __call__(self, text: str, task: str) -> list[float]:
+        """Embed text according to the requested Jina task name."""
         if task == self.query_task:
             return self.embed_query(text)
         elif task == self.passage_task:
@@ -97,25 +74,18 @@ class JinaAIEmbedder:
         else:
             raise ValueError("Invalid task specified")
 
-class JinaAIAPIEmbedder:
-    def __init__(
-            self, passage_task="retrieval.passage",
-            query_task="retrieval.query", embedding_dim=512,
-            config_path: str = "../API_tokens/jina_api.json"):
-        """
-        Initializes the JinaAIEmbedder class with the model, tokenizer,
-        and task identifiers.
 
-        Parameters:
-        - passage_task (str): Task identifier for embedding documents.
-            Defaults to "retrieval.passage".
-        - query_task (str): Task identifier for embedding queries.
-            Defaults to "retrieval.query".
-        - embedding_dim (int): Dimensionality of the embeddings.
-            Defaults to 1024.
-        - config_path (str): Path to the JSON file containing
-            the Jina API key. Defaults to "../API_tokens/jina_api.json".
-        """
+class JinaAIAPIEmbedder:
+    """Embed texts through the Jina embeddings API."""
+
+    def __init__(
+        self,
+        passage_task="retrieval.passage",
+        query_task="retrieval.query",
+        embedding_dim=512,
+        config_path: str = "../API_tokens/jina_api.json",
+    ):
+        """Initialize API credentials and embedding task names."""
         self.passage_task = passage_task
         self.query_task = query_task
         self.embedding_dim = embedding_dim
@@ -130,21 +100,11 @@ class JinaAIAPIEmbedder:
             raise ValueError("Jina API key not found.")
 
     def api_embed(self, texts, task="retrieval.query"):
-        """
-        Generates an embedding for the given text using the Jina Embeddings API
-
-        Parameters:
-        - text (str): The text to embed.
-        - task (str): The task identifier
-            (e.g., "retrieval.query" or "retrieval.passage").
-
-        Returns:
-        - np.ndarray: The resulting embedding vector as a NumPy array.
-        """
-        url = 'https://api.jina.ai/v1/embeddings'
+        """Request embeddings from the Jina embeddings API."""
+        url = "https://api.jina.ai/v1/embeddings"
         headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.api_key}'
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
         }
 
         if type(texts) is str:
@@ -156,7 +116,7 @@ class JinaAIAPIEmbedder:
             "embedding_type": "base64",
             "task": task,
             "late_chunking": False,
-            "input": texts
+            "input": texts,
         }
 
         response = requests.post(url, headers=headers, json=data)
@@ -164,61 +124,34 @@ class JinaAIAPIEmbedder:
         response_data = response.json()
 
         embeddings = []
-        for item in response_data['data']:
-            binary_data = base64.b64decode(item['embedding'])
+        for item in response_data["data"]:
+            binary_data = base64.b64decode(item["embedding"])
             # Ensure float32 format for compatibility across models
-            embedding_array = np.frombuffer(binary_data, dtype='<f4')
+            embedding_array = np.frombuffer(binary_data, dtype="<f4")
             embeddings.append(embedding_array.tolist())
 
         return embeddings
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        """
-        Generates embeddings for a list of document (passage) texts.
-
-        Caching is not used here by default to avoid storing large numbers
-        of document embeddings.
-
-        Parameters:
-        - texts (List[str]): A list of document texts to embed.
-
-        Returns:
-        - List[List[float]]: A list of embedding vectors, each corresponding
-        to a document.
-        """
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed passage documents through the Jina API."""
         embeddings = self.api_embed(texts, task=self.passage_task)
         return embeddings
 
-    def embed_query(self, text: str) -> List[float]:
-        """
-        Generates an embedding for a single query string.
-
-        Parameters:
-        - text (str): The query text to embed.
-
-        Returns:
-        - List[float]: The embedding vector corresponding to the query.
-        """
+    def embed_query(self, text: str) -> list[float]:
+        """Embed one query string through the Jina API."""
         embeddings = self.api_embed([text], task=self.query_task)
         return embeddings[0]
 
-    def __call__(self, text: str, task: str) -> List[float]:
+    def __call__(self, text: str, task: str) -> list[float]:
+        """Embed text through the Jina API using the provided task."""
         return self.api_embed([text], task=task)[0]
 
 
 class JinaAIReranker:
-    def __init__(self, max_tokens=1024, device='cuda'):
-        """
-        Initializes the JinaAIReranker with a maximum token length
-        and the Jina Reranker model.
+    """Score query-document relevance with the Jina reranker."""
 
-        Parameters:
-        - max_tokens (int): Maximum sequence length for the reranker
-        (must be <= 1024).
-
-        Raises:
-        - ValueError: If max_tokens is greater than 1024.
-        """
+    def __init__(self, max_tokens=1024, device="cuda"):
+        """Initialize the local Jina reranker model."""
         import torch
         from transformers import AutoModelForSequenceClassification
 
@@ -229,29 +162,16 @@ class JinaAIReranker:
 
         self.max_tokens = max_tokens
         self.model = AutoModelForSequenceClassification.from_pretrained(
-            'jinaai/jina-reranker-v2-base-multilingual',
-            trust_remote_code=True
+            "jinaai/jina-reranker-v2-base-multilingual", trust_remote_code=True
         ).to(device)
 
-    def rank(self, query: str, texts: List[str]) -> List[float]:
-        """
-        Scores a list of documents based on their relevance to the given query.
-
-        Parameters:
-        - query (str): The user's query text.
-        - texts (List[str]): A list of document texts to rank.
-
-        Returns:
-        - List[float]: A list of relevance scores, each corresponding
-        to one document.
-        """
+    def rank(self, query: str, texts: list[str]) -> list[float]:
+        """Score documents against a query."""
         sentence_pairs = [[query, doc] for doc in texts]
 
         with self.torch.no_grad():
-            return self.model.compute_score(
-                sentence_pairs,
-                max_length=self.max_tokens
-            )
+            return self.model.compute_score(sentence_pairs, max_length=self.max_tokens)
 
-    def __call__(self, query: str, texts: List[str]) -> List[float]:
+    def __call__(self, query: str, texts: list[str]) -> list[float]:
+        """Score documents against a query."""
         return self.rank(query, texts)

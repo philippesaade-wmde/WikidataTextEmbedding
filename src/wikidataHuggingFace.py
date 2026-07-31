@@ -1,3 +1,5 @@
+"""Publish Wikidata-derived rows and vectors to Hugging Face datasets."""
+
 import json
 import os
 import re
@@ -23,8 +25,7 @@ from src.hfUploadCheckpoint import HFUploadCheckpoint
 
 
 class WikidataHFDatasetPublisher:
-    """
-    Publish JSON-like records to a Hugging Face dataset repo in chunked parquet files.
+    """Publish JSON-like records to a Hugging Face dataset repo in chunked parquet files.
 
     Designed for use inside `WikidataDumpReader.run(..., handler_receives_batch=True)`,
     while keeping local storage usage bounded.
@@ -33,15 +34,16 @@ class WikidataHFDatasetPublisher:
     def __init__(
         self,
         branch: str,
-        config_path: str = None,
+        config_path: str | None = None,
         storage_chunk_size: int = 1000,
         memory_chunk_size: int = 20,
         queue_size: int = 128,
-        data_dir: str | None = 'data',
+        data_dir: str | None = "data",
     ):
+        """Initialize Hugging Face credentials, checkpointing, and upload worker."""
         self.storage_chunk_size = max(1, int(storage_chunk_size))
         self.memory_chunk_size = max(1, int(memory_chunk_size))
-        self.closed = Value('i', 0)
+        self.closed = Value("i", 0)
         self.write_lock = Lock()
         self.queue = Queue(maxsize=max(1, int(queue_size)))
         self.branch = branch
@@ -66,8 +68,7 @@ class WikidataHFDatasetPublisher:
         )
         self.chunk_idx = self._next_remote_chunk_idx()
         print(
-            f"HF checkpoint: {self.checkpoint.path} "
-            f"(next chunk {self.chunk_idx})",
+            f"HF checkpoint: {self.checkpoint.path} (next chunk {self.chunk_idx})",
             flush=True,
         )
 
@@ -77,6 +78,7 @@ class WikidataHFDatasetPublisher:
         self.uploader.start()
 
     def create_new_branch(self):
+        """Create the target dataset branch if it does not already exist."""
         api = HfApi(token=self.token)
 
         refs = api.list_repo_refs(repo_id=self.repo_id, repo_type="dataset")
@@ -86,9 +88,15 @@ class WikidataHFDatasetPublisher:
 
         api.create_branch(repo_id=self.repo_id, branch=self.branch, repo_type="dataset")
 
-        files = api.list_repo_files(repo_id=self.repo_id, repo_type="dataset", revision=self.branch)
+        files = api.list_repo_files(
+            repo_id=self.repo_id, repo_type="dataset", revision=self.branch
+        )
 
-        ops = [CommitOperationDelete(path_in_repo=f) for f in files if f.startswith("data/")]
+        ops = [
+            CommitOperationDelete(path_in_repo=f)
+            for f in files
+            if f.startswith("data/")
+        ]
 
         if ops:
             self._create_commit_with_retry(
@@ -123,7 +131,10 @@ class WikidataHFDatasetPublisher:
                         retry_after = None
 
                 wait_s = max(retry_after or sleep_time, 1)
-                print(f"HF commit failed/rate-limited; retrying in {wait_s} seconds.", flush=True)
+                print(
+                    f"HF commit failed/rate-limited; retrying in {wait_s} seconds.",
+                    flush=True,
+                )
                 sleep(wait_s)
                 sleep_time = min(sleep_time * 2, 3600 if status_code == 429 else 30)
             except Exception:
@@ -134,11 +145,10 @@ class WikidataHFDatasetPublisher:
     @staticmethod
     def merge_to_main(
         branch: str,
-        config_path: str = None,
+        config_path: str | None = None,
         batch_size: int = 1000,
     ) -> dict:
-        """
-        Make main match a published branch without downloading parquet chunks.
+        """Make main match a published branch without downloading parquet chunks.
 
         Parquet files are copied server-side. Regular small files, such as README.md
         and .gitattributes, are downloaded and uploaded.
@@ -172,27 +182,27 @@ class WikidataHFDatasetPublisher:
             }
 
         api = HfApi(token=token)
-        source_files = set(api.list_repo_files(
-            repo_id=repo_id,
-            repo_type="dataset",
-            revision=branch,
-        ))
-        target_files = set(api.list_repo_files(
-            repo_id=repo_id,
-            repo_type="dataset",
-            revision=target_branch,
-        ))
+        source_files = set(
+            api.list_repo_files(
+                repo_id=repo_id,
+                repo_type="dataset",
+                revision=branch,
+            )
+        )
+        target_files = set(
+            api.list_repo_files(
+                repo_id=repo_id,
+                repo_type="dataset",
+                revision=target_branch,
+            )
+        )
 
         files_to_delete = sorted(target_files - source_files)
         files_to_copy = sorted(
-            path
-            for path in source_files
-            if path.endswith(".parquet")
+            path for path in source_files if path.endswith(".parquet")
         )
         files_to_add = sorted(
-            path
-            for path in source_files
-            if not path.endswith(".parquet")
+            path for path in source_files if not path.endswith(".parquet")
         )
         batch_size = max(1, int(batch_size))
         commits = 0
@@ -205,7 +215,7 @@ class WikidataHFDatasetPublisher:
         )
 
         for start in range(0, len(files_to_delete), batch_size):
-            batch = files_to_delete[start:start + batch_size]
+            batch = files_to_delete[start : start + batch_size]
             WikidataHFDatasetPublisher._create_commit_with_retry(
                 api,
                 repo_id=repo_id,
@@ -218,7 +228,7 @@ class WikidataHFDatasetPublisher:
 
         with tempfile.TemporaryDirectory(prefix="hf_merge_") as tmp_dir:
             for start in range(0, len(files_to_add), batch_size):
-                batch = files_to_add[start:start + batch_size]
+                batch = files_to_add[start : start + batch_size]
                 operations = []
                 for path in batch:
                     local_path = hf_hub_download(
@@ -246,7 +256,7 @@ class WikidataHFDatasetPublisher:
                 commits += 1
 
         for start in range(0, len(files_to_copy), batch_size):
-            batch = files_to_copy[start:start + batch_size]
+            batch = files_to_copy[start : start + batch_size]
             WikidataHFDatasetPublisher._create_commit_with_retry(
                 api,
                 repo_id=repo_id,
@@ -285,22 +295,24 @@ class WikidataHFDatasetPublisher:
             revision=self.branch,
         )
         chunk_indices = [
-            int(match.group(1))
-            for f in files
-            if (match := pattern.match(f))
+            int(match.group(1)) for f in files if (match := pattern.match(f))
         ]
         return max(chunk_indices, default=-1) + 1
 
     def _publish_records(self):
         api = HfApi(token=self.token)
         while True:
-            chunk_fd, chunk_path = tempfile.mkstemp(prefix="hf_chunk_", suffix=".parquet")
+            chunk_fd, chunk_path = tempfile.mkstemp(
+                prefix="hf_chunk_", suffix=".parquet"
+            )
             os.close(chunk_fd)
 
             num_records = 0
             reached_end = False
             try:
-                num_records, reached_end, chunk_ids = self._write_chunk_parquet(chunk_path)
+                num_records, reached_end, chunk_ids = self._write_chunk_parquet(
+                    chunk_path
+                )
 
                 if num_records == 0:
                     if reached_end:
@@ -371,7 +383,7 @@ class WikidataHFDatasetPublisher:
                         writer = pq.ParquetWriter(
                             chunk_path,
                             schema,
-                            compression='zstd',
+                            compression="zstd",
                         )
                     writer.write_table(table)
                     batch_rows.clear()
@@ -383,7 +395,7 @@ class WikidataHFDatasetPublisher:
                     writer = pq.ParquetWriter(
                         chunk_path,
                         schema,
-                        compression='zstd',
+                        compression="zstd",
                     )
                 writer.write_table(table)
                 batch_rows.clear()
@@ -394,13 +406,11 @@ class WikidataHFDatasetPublisher:
         return num_records, reached_end, chunk_ids
 
     def existing_ids(self, ids: list[str]) -> set[str]:
+        """Return IDs already present in the upload checkpoint."""
         return self.checkpoint.existing_ids(ids)
 
     def flush(self) -> int:
-        """
-        Stop uploader and push remaining rows.
-        Safe to call multiple times; only first caller performs shutdown.
-        """
+        """Stop the uploader and push remaining rows."""
         with self.closed.get_lock():
             if self.closed.value == 1:
                 return 0
@@ -422,12 +432,7 @@ class WikidataHFDatasetPublisher:
         return 0
 
     def add_records(self, records: list[dict]) -> int:
-        """
-        Queue rows for uploader process.
-
-        Returns:
-        - Number of rows queued by this call.
-        """
+        """Queue rows for upload and return the number accepted."""
         if not records:
             return 0
 
@@ -444,40 +449,43 @@ class WikidataHFDatasetPublisher:
                 except Full:
                     with self.closed.get_lock():
                         if self.closed.value == 1:
-                            raise RuntimeError("Cannot add records after flush has started.")
+                            raise RuntimeError(
+                                "Cannot add records after flush has started."
+                            )
                     continue
 
         return len(valid_records)
 
     def publish_wd_batch(self, items: list[dict]) -> int:
-        """
-        Map raw dump items using `item_to_json`, add to buffer,
-        and upload only when a large enough shard accumulates.
-        """
+        """Queue raw Wikidata rows for dataset upload."""
         rows = []
         for item in items:
             if item:
-                rows.append({
-                    "id": item["id"],
-                    "labels": orjson.dumps(item["labels"]).decode("utf-8"),
-                    "descriptions": orjson.dumps(item["descriptions"]).decode("utf-8"),
-                    "aliases": orjson.dumps(item["aliases"]).decode("utf-8"),
-                    "sitelinks": orjson.dumps(item["sitelinks"]).decode("utf-8"),
-                    "claims": orjson.dumps(item["claims"]).decode("utf-8")
-                })
+                rows.append(
+                    {
+                        "id": item["id"],
+                        "labels": orjson.dumps(item["labels"]).decode("utf-8"),
+                        "descriptions": orjson.dumps(item["descriptions"]).decode(
+                            "utf-8"
+                        ),
+                        "aliases": orjson.dumps(item["aliases"]).decode("utf-8"),
+                        "sitelinks": orjson.dumps(item["sitelinks"]).decode("utf-8"),
+                        "claims": orjson.dumps(item["claims"]).decode("utf-8"),
+                    }
+                )
         return self.add_records(rows)
 
     def publish_vector_batch(self, vectors: list[dict]) -> int:
-        """
-        Map cached vector rows and queue them for upload.
-        """
+        """Queue cached vector rows for dataset upload."""
         rows = []
         for vector in vectors:
             if vector and vector.get("vector") is not None:
-                rows.append({
-                    "id": vector.get("id") or "",
-                    "vector": vector.get("vector"),
-                    "lang": vector.get("lang") or "",
-                    "wdid": vector.get("wdid") or "",
-                })
+                rows.append(
+                    {
+                        "id": vector.get("id") or "",
+                        "vector": vector.get("vector"),
+                        "lang": vector.get("lang") or "",
+                        "wdid": vector.get("wdid") or "",
+                    }
+                )
         return self.add_records(rows)

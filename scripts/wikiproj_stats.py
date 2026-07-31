@@ -1,3 +1,5 @@
+"""Build pairwise Wikidata filter matrices from a dump."""
+
 import json
 import os
 import sys
@@ -11,9 +13,9 @@ from src.WikidataFilter import WikidataScholarlyArticleFilter
 
 # ---- Runtime config ----
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
-NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", 4))
-READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", 10))
-READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", 2000))
+NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", "4"))
+READER_QUEUE_SIZE = int(os.environ.get("READER_QUEUE_SIZE", "10"))
+READER_BATCH_SIZE = int(os.environ.get("READER_BATCH_SIZE", "2000"))
 OUTPUT_PATH = os.environ.get("OUTPUT_PATH", "data/pair_filter_matrix.json")
 TARGET_LANGS = tuple(
     dict.fromkeys(
@@ -154,8 +156,7 @@ SHARED_LOCK = None
 
 # ---- Worker and batch handlers ----
 def collect_stats(items):
-    global SHARED_STATS, SHARED_LOCK
-
+    """Collect pairwise filter counts for one dump-reader batch."""
     batch_stats = {}
     for entity in items:
         if not isinstance(entity, dict):
@@ -176,7 +177,9 @@ def collect_stats(items):
             for claim in entity.get("claims", {}).get("P31", [])
             if claim.get("rank") != "deprecated"
             and isinstance(
-                value := claim.get("mainsnak", {}).get("datavalue", {}).get("value", {}),
+                value := claim.get("mainsnak", {})
+                .get("datavalue", {})
+                .get("value", {}),
                 dict,
             )
             and value.get("id")
@@ -190,12 +193,10 @@ def collect_stats(items):
             )
         )
         filter_results = {
-            "basic": bool(entity.get("labels")) and (
-                bool(entity.get("descriptions")) or bool(entity.get("claims"))
-            ),
+            "basic": bool(entity.get("labels"))
+            and (bool(entity.get("descriptions")) or bool(entity.get("claims"))),
             "has_wikipedia_sitelink": any(
-                sitelink_id.endswith("wiki")
-                for sitelink_id in sitelink_ids
+                sitelink_id.endswith("wiki") for sitelink_id in sitelink_ids
             ),
             "has_commons_sitelink": "commonswiki" in sitelink_ids,
             "has_abstract_wikipedia_sitelink": "abstractwiki" in sitelink_ids,
@@ -205,8 +206,7 @@ def collect_stats(items):
 
         for filter_id, suffix in SITELINK_PROJECT_SUFFIXES.items():
             filter_results[filter_id] = any(
-                sitelink_id.endswith(suffix)
-                for sitelink_id in sitelink_ids
+                sitelink_id.endswith(suffix) for sitelink_id in sitelink_ids
             )
 
         for filter_id, site_id in EXACT_SITELINK_SITES.items():
@@ -215,8 +215,7 @@ def collect_stats(items):
         for filter_id, qid in EXCLUDED_INSTANCE_TYPES.items():
             filter_results[filter_id] = qid not in instanceof
         filter_results["none_of_excluded_types"] = not_scholarly_article and all(
-            qid not in instanceof
-            for qid in EXCLUDED_INSTANCE_TYPES.values()
+            qid not in instanceof for qid in EXCLUDED_INSTANCE_TYPES.values()
         )
         basic_pass = filter_results["basic"]
         for filter_id in FILTER_IDS:
@@ -241,7 +240,9 @@ def collect_stats(items):
                 for filter_id, passed in filter_results.items()
                 if passed
             )
-            for left_index, right_index in combinations_with_replacement(passed_indices, 2):
+            for left_index, right_index in combinations_with_replacement(
+                passed_indices, 2
+            ):
                 matrix_key = f"{scope}:matrix:{left_index}:{right_index}"
                 batch_stats[matrix_key] = batch_stats.get(matrix_key, 0) + 1
 
@@ -252,6 +253,7 @@ def collect_stats(items):
 
 # ---- Orchestration ----
 def run_stats():
+    """Run the stats reader and write the pairwise matrix report."""
     global SHARED_STATS, SHARED_LOCK
 
     ctx = get_context("fork")
@@ -293,10 +295,7 @@ def run_stats():
             "pair_matrix": matrix,
         }
 
-    per_language = {
-        lang: scopes[f"language:{lang}"]
-        for lang in TARGET_LANGS
-    }
+    per_language = {lang: scopes[f"language:{lang}"] for lang in TARGET_LANGS}
 
     output = {
         "dump_path": DUMP_PATH,

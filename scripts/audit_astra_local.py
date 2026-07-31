@@ -1,3 +1,5 @@
+"""Compare AstraDB vector IDs with the local SQLite vector cache."""
+
 import argparse
 import sqlite3
 import sys
@@ -8,6 +10,7 @@ from src.wikidataVectorDB import AstraDBConnect
 
 
 def parse_args():
+    """Parse command-line arguments for the audit."""
     parser = argparse.ArgumentParser(
         description="Compare AstraDB document IDs with the local SQLite vector cache."
     )
@@ -27,6 +30,7 @@ def parse_args():
 
 
 def find_local_ids(connection, ids):
+    """Return the subset of IDs present in the local SQLite cache."""
     placeholders = ",".join("?" for _ in ids)
     rows = connection.execute(
         f"SELECT id FROM vectors WHERE id IN ({placeholders})",
@@ -36,6 +40,7 @@ def find_local_ids(connection, ids):
 
 
 def main():
+    """Run the AstraDB-versus-SQLite ID audit."""
     args = parse_args()
     database_path = (
         Path(args.data_dir)
@@ -44,7 +49,9 @@ def main():
     if not database_path.is_file():
         raise SystemExit(f"Local database not found: {database_path}")
 
-    astra = AstraDBConnect(lang=args.lang, entity_type=args.entity_type, config_path=args.config)
+    astra = AstraDBConnect(
+        lang=args.lang, entity_type=args.entity_type, config_path=args.config
+    )
     collection = astra.collection
 
     with sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True) as local:
@@ -66,7 +73,9 @@ def main():
                 continue
 
             local_ids = find_local_ids(local, batch)
-            missing_ids = [document_id for document_id in batch if document_id not in local_ids]
+            missing_ids = [
+                document_id for document_id in batch if document_id not in local_ids
+            ]
             if args.print_mismatches:
                 for document_id in missing_ids:
                     print(f"Astra-only ID: {document_id}", flush=True)
@@ -77,7 +86,10 @@ def main():
             scanned_count += len(batch)
             batch.clear()
 
-            if args.progress_every and scanned_count % args.progress_every < args.batch_size:
+            if (
+                args.progress_every
+                and scanned_count % args.progress_every < args.batch_size
+            ):
                 print(
                     f"Scanned {scanned_count:,}; "
                     f"Astra-only documents found: {astra_only_count:,}"
@@ -85,7 +97,9 @@ def main():
 
         if batch:
             local_ids = find_local_ids(local, batch)
-            missing_ids = [document_id for document_id in batch if document_id not in local_ids]
+            missing_ids = [
+                document_id for document_id in batch if document_id not in local_ids
+            ]
             if args.print_mismatches:
                 for document_id in missing_ids:
                     print(f"Astra-only ID: {document_id}", flush=True)

@@ -1,3 +1,5 @@
+"""Wrap AstraDB vector collection operations used by the pipeline."""
+
 import json
 import os
 import time
@@ -10,18 +12,15 @@ from astrapy.exceptions.data_api_exceptions import DataAPIResponseException
 
 
 class AstraDBConnect:
-    def __init__(
-            self,
-            lang="en",
-            entity_type="items",
-            config_path: str = "../API_tokens/datastax_api.json"):
-        """
-        Initialize a connection to one AstraDB vector collection.
+    """Connect to one language-specific AstraDB vector collection."""
 
-        Parameters:
-        - datastax_token (dict): Credentials for DataStax Astra, including token and API endpoint.
-        - entity_type (str): Collection suffix, for example items, items_nositelinks, or properties.
-        """
+    def __init__(
+        self,
+        lang="en",
+        entity_type="items",
+        config_path: str = "../API_tokens/datastax_api.json",
+    ):
+        """Initialize a connection to one AstraDB vector collection."""
         datastax_token = {}
         if config_path and os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f_in:
@@ -32,17 +31,12 @@ class AstraDBConnect:
         collection_prefix = os.environ.get("ASTRA_COLLECTION_PREFIX")
 
         ASTRA_DB_APPLICATION_TOKEN = datastax_token.get(
-            "ASTRA_DB_APPLICATION_TOKEN",
-            ASTRA_DB_APPLICATION_TOKEN
+            "ASTRA_DB_APPLICATION_TOKEN", ASTRA_DB_APPLICATION_TOKEN
         )
         ASTRA_DB_API_ENDPOINT = datastax_token.get(
-            "ASTRA_DB_API_ENDPOINT",
-            ASTRA_DB_API_ENDPOINT
+            "ASTRA_DB_API_ENDPOINT", ASTRA_DB_API_ENDPOINT
         )
-        collection_prefix = datastax_token.get(
-            "COLLECTION_PREFIX",
-            collection_prefix
-        )
+        collection_prefix = datastax_token.get("COLLECTION_PREFIX", collection_prefix)
 
         if not ASTRA_DB_APPLICATION_TOKEN:
             raise ValueError("Astra DB token not found.")
@@ -54,10 +48,7 @@ class AstraDBConnect:
 
         timeout_options = TimeoutOptions(request_timeout_ms=1000000)
         api_options = APIOptions(timeout_options=timeout_options)
-        client = DataAPIClient(
-            ASTRA_DB_APPLICATION_TOKEN,
-            api_options=api_options
-        )
+        client = DataAPIClient(ASTRA_DB_APPLICATION_TOKEN, api_options=api_options)
         database0 = client.get_database(ASTRA_DB_API_ENDPOINT)
 
         collection_names = database0.list_collection_names()
@@ -69,26 +60,7 @@ class AstraDBConnect:
             raise ValueError(f"Collection {collection_name} not found in Astra DB.")
 
     def create_documents(self, docs):
-        """
-        Push the current batch of documents to AstraDB for storage.
-
-        doc = {
-            '_id': str,
-            'content': str,
-            '$vector': list[float],
-            'metadata': {
-                "Label": str,
-                "Description": str,
-                "Date": str,
-                "QID": str,
-                "ChunkID": int,
-                "Language": str,
-                "InstanceOf": list[str],
-                "Properties": list[str],
-                "DumpDate": str
-            }
-        }
-        """
+        """Insert documents into AstraDB."""
         if len(docs) == 0:
             return []
 
@@ -116,47 +88,22 @@ class AstraDBConnect:
         return inserted_ids
 
     def update_documents(self, docs):
-        """
-        Update existing documents in AstraDB.
-
-        doc = {
-            '_id': str,
-            'content': str,
-            '$vector': list[float],
-            'metadata': {
-                "Label": str,
-                "Description": str,
-                "Date": str,
-                "QID": str,
-                "ChunkID": int,
-                "Language": str,
-                "InstanceOf": list[str],
-                "Properties": list[str],
-                "DumpDate": str
-            }
-        }
-        """
+        """Update or upsert existing documents in AstraDB."""
         if len(docs) == 0:
             return []
 
         updated = []
         for doc in docs:
             docid = doc["_id"]
-            update_fields = {
-                key: value
-                for key, value in doc.items()
-                if key != "_id"
-            }
+            update_fields = {key: value for key, value in doc.items() if key != "_id"}
 
             truncated = False
             while True:
                 try:
                     self.collection.update_one(
                         filter={"_id": docid},
-                        update={
-                            "$set": update_fields
-                        },
-                        upsert=True
+                        update={"$set": update_fields},
+                        upsert=True,
                     )
                     updated.append(docid)
                     break
@@ -164,7 +111,9 @@ class AstraDBConnect:
                     # Content is too large to publish
                     if truncated:
                         raise e
-                    update_fields['content'] = update_fields['content'][:3000] + " [TRUNCATED]"
+                    update_fields["content"] = (
+                        update_fields["content"][:3000] + " [TRUNCATED]"
+                    )
                     truncated = True
                 except Exception:
                     traceback.print_exc()
@@ -173,9 +122,7 @@ class AstraDBConnect:
         return updated
 
     def delete_documents(self, ids, batch_size=100):
-        """
-        Delete documents from AstraDB by ID. Returns the count of deleted documents.
-        """
+        """Delete documents from AstraDB by ID and return the count deleted."""
         if not ids:
             return 0
 
