@@ -66,13 +66,20 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
             with Session() as session:
                 try:
                     for row in data:
-                        row["last_updated"] = normalize_datetime(
-                            row.get("last_updated")
-                        )
+                        row["last_updated"] = normalize_datetime(row.get("last_updated"))
 
                     session.execute(
                         text(
-                            "INSERT INTO vectors (id, vector, lang, wdid, last_updated, last_dump) VALUES (:id, :vector, :lang, :wdid, :last_updated, :last_dump) ON CONFLICT(id) DO UPDATE SET vector = EXCLUDED.vector, lang = EXCLUDED.lang, wdid = EXCLUDED.wdid, last_updated = EXCLUDED.last_updated, last_dump = EXCLUDED.last_dump"
+                            "INSERT INTO vectors "
+                            "(id, vector, lang, wdid, last_updated, last_dump) "
+                            "VALUES (:id, :vector, :lang, :wdid, "
+                            ":last_updated, :last_dump) "
+                            "ON CONFLICT(id) DO UPDATE SET "
+                            "vector = EXCLUDED.vector, "
+                            "lang = EXCLUDED.lang, "
+                            "wdid = EXCLUDED.wdid, "
+                            "last_updated = EXCLUDED.last_updated, "
+                            "last_dump = EXCLUDED.last_dump"
                         ),
                         data,
                     )
@@ -103,9 +110,7 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
                 dump_date = normalize_datetime(dump_date)
             with Session() as session:
                 return session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM vectors WHERE last_dump IS NULL OR last_dump < :d"
-                    ),
+                    text("SELECT COUNT(*) FROM vectors WHERE last_dump IS NULL OR last_dump < :d"),
                     {"d": dump_date},
                 ).scalar()
 
@@ -120,7 +125,10 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
                     batch = (
                         session.execute(
                             text(
-                                "SELECT id FROM vectors WHERE (last_dump IS NULL OR last_dump < :d) AND id > :c ORDER BY id LIMIT :n"
+                                "SELECT id FROM vectors "
+                                "WHERE (last_dump IS NULL OR last_dump < :d) "
+                                "AND id > :c "
+                                "ORDER BY id LIMIT :n"
                             ),
                             {"d": dump_date, "c": cursor, "n": batch_size},
                         )
@@ -132,9 +140,7 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
                     break
                 yield batch
                 with Session() as session:
-                    session.query(VectorCache).filter(VectorCache.id.in_(batch)).delete(
-                        synchronize_session=False
-                    )
+                    session.query(VectorCache).filter(VectorCache.id.in_(batch)).delete(synchronize_session=False)
                     session.commit()
                 cursor = batch[-1]
 
@@ -145,15 +151,9 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
                 try:
                     ids = [f"{d['id']}_{lang}_1" for d in data]
                     existing_rows = (
-                        session.query(VectorCache.wdid, VectorCache.last_updated)
-                        .filter(VectorCache.id.in_(ids))
-                        .all()
+                        session.query(VectorCache.wdid, VectorCache.last_updated).filter(VectorCache.id.in_(ids)).all()
                     )
-                    existing_dict = {
-                        wdid: last_updated
-                        for wdid, last_updated in existing_rows
-                        if wdid
-                    }
+                    existing_dict = {wdid: last_updated for wdid, last_updated in existing_rows if wdid}
 
                     to_update = []
                     to_create = []
@@ -191,12 +191,8 @@ def get_db_connection(lang="en", entity_type="items", data_dir="../data/Wikidata
                         "id": item["_id"],
                         "vector": vector_compressed,
                         "lang": item["metadata"]["Language"],
-                        "wdid": item["metadata"].get(
-                            "QID", item["metadata"].get("PID")
-                        ),
-                        "last_updated": item["metadata"].get(
-                            "LastModified", datetime.utcnow().isoformat()
-                        ),
+                        "wdid": item["metadata"].get("QID", item["metadata"].get("PID")),
+                        "last_updated": item["metadata"].get("LastModified", datetime.utcnow().isoformat()),
                         "last_dump": dump_date,
                     }
                 )

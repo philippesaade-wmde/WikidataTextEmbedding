@@ -17,3 +17,23 @@ dependencies = [
     "tqdm>=4.67.3",
     "transformers>=5.7.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0"
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes (catches undefined names, unused imports, etc.)
+    "I",   # isort (import sorting)
+    "D",   # pydocstring (function/class documentation)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
