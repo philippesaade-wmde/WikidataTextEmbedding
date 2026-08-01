@@ -1,8 +1,6 @@
 """Embed and rank text with Jina models and APIs."""
 
 import base64
-import json
-import os
 
 import numpy as np
 import requests
@@ -15,9 +13,7 @@ class JinaAITokenizer:
         """Load the pretrained tokenizer."""
         from transformers import AutoTokenizer
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            "jinaai/jina-embeddings-v3", trust_remote_code=True
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained("jinaai/jina-embeddings-v3", trust_remote_code=True)
 
     def __call__(self, *args, **kwargs):
         """Forward calls to the wrapped tokenizer."""
@@ -44,25 +40,19 @@ class JinaAIEmbedder:
         self.query_task = query_task
         self.embedding_dim = embedding_dim
 
-        self.model = AutoModel.from_pretrained(
-            "jinaai/jina-embeddings-v3", trust_remote_code=True
-        ).to(device)
+        self.model = AutoModel.from_pretrained("jinaai/jina-embeddings-v3", trust_remote_code=True).to(device)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed passage documents with the local model."""
         with self.torch.no_grad():
-            embeddings = self.model.encode(
-                texts, task=self.passage_task, truncate_dim=self.embedding_dim
-            )
+            embeddings = self.model.encode(texts, task=self.passage_task, truncate_dim=self.embedding_dim)
 
         return embeddings.tolist()
 
     def embed_query(self, text: str) -> list[float]:
         """Embed one query string with the local model."""
         with self.torch.no_grad():
-            embedding = self.model.encode(
-                [text], task=self.query_task, truncate_dim=self.embedding_dim
-            )[0]
+            embedding = self.model.encode([text], task=self.query_task, truncate_dim=self.embedding_dim)[0]
             return embedding.tolist()
 
     def __call__(self, text: str, task: str) -> list[float]:
@@ -83,18 +73,14 @@ class JinaAIAPIEmbedder:
         passage_task="retrieval.passage",
         query_task="retrieval.query",
         embedding_dim=512,
-        config_path: str = "../API_tokens/jina_api.json",
+        api_key: str | None = None,
     ):
         """Initialize API credentials and embedding task names."""
         self.passage_task = passage_task
         self.query_task = query_task
         self.embedding_dim = embedding_dim
 
-        self.api_key = os.environ.get("JINA_API_KEY")
-        if config_path and os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f_in:
-                data = json.load(f_in)
-                self.api_key = data.get("API_KEY", self.api_key)
+        self.api_key = api_key
 
         if not self.api_key:
             raise ValueError("Jina API key not found.")

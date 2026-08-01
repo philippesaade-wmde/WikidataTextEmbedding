@@ -1,6 +1,7 @@
 """Compare AstraDB vector IDs with the local SQLite vector cache."""
 
 import argparse
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -11,9 +12,7 @@ from src.wikidataVectorDB import AstraDBConnect
 
 def parse_args():
     """Parse command-line arguments for the audit."""
-    parser = argparse.ArgumentParser(
-        description="Compare AstraDB document IDs with the local SQLite vector cache."
-    )
+    parser = argparse.ArgumentParser(description="Compare AstraDB document IDs with the local SQLite vector cache.")
     parser.add_argument("--lang", required=True)
     parser.add_argument(
         "--entity-type",
@@ -21,7 +20,6 @@ def parse_args():
         default="items",
     )
     parser.add_argument("--data-dir", default="data/Wikidata")
-    parser.add_argument("--config", default="API_tokens/datastax_api.json")
     parser.add_argument("--batch-size", type=int, default=500)
     parser.add_argument("--sample-limit", type=int, default=20)
     parser.add_argument("--progress-every", type=int, default=1000)
@@ -42,15 +40,16 @@ def find_local_ids(connection, ids):
 def main():
     """Run the AstraDB-versus-SQLite ID audit."""
     args = parse_args()
-    database_path = (
-        Path(args.data_dir)
-        / f"sqlite_wikidata_vectors_{args.entity_type}_{args.lang}.db"
-    )
+    database_path = Path(args.data_dir) / f"sqlite_wikidata_vectors_{args.entity_type}_{args.lang}.db"
     if not database_path.is_file():
         raise SystemExit(f"Local database not found: {database_path}")
 
     astra = AstraDBConnect(
-        lang=args.lang, entity_type=args.entity_type, config_path=args.config
+        lang=args.lang,
+        entity_type=args.entity_type,
+        application_token=os.environ.get("ASTRA_DB_APPLICATION_TOKEN"),
+        api_endpoint=os.environ.get("ASTRA_DB_API_ENDPOINT"),
+        collection_prefix=os.environ.get("ASTRA_COLLECTION_PREFIX"),
     )
     collection = astra.collection
 
@@ -73,40 +72,26 @@ def main():
                 continue
 
             local_ids = find_local_ids(local, batch)
-            missing_ids = [
-                document_id for document_id in batch if document_id not in local_ids
-            ]
+            missing_ids = [document_id for document_id in batch if document_id not in local_ids]
             if args.print_mismatches:
                 for document_id in missing_ids:
                     print(f"Astra-only ID: {document_id}", flush=True)
             astra_only_count += len(missing_ids)
-            astra_only_samples.extend(
-                missing_ids[: max(0, args.sample_limit - len(astra_only_samples))]
-            )
+            astra_only_samples.extend(missing_ids[: max(0, args.sample_limit - len(astra_only_samples))])
             scanned_count += len(batch)
             batch.clear()
 
-            if (
-                args.progress_every
-                and scanned_count % args.progress_every < args.batch_size
-            ):
-                print(
-                    f"Scanned {scanned_count:,}; "
-                    f"Astra-only documents found: {astra_only_count:,}"
-                )
+            if args.progress_every and scanned_count % args.progress_every < args.batch_size:
+                print(f"Scanned {scanned_count:,}; Astra-only documents found: {astra_only_count:,}")
 
         if batch:
             local_ids = find_local_ids(local, batch)
-            missing_ids = [
-                document_id for document_id in batch if document_id not in local_ids
-            ]
+            missing_ids = [document_id for document_id in batch if document_id not in local_ids]
             if args.print_mismatches:
                 for document_id in missing_ids:
                     print(f"Astra-only ID: {document_id}", flush=True)
             astra_only_count += len(missing_ids)
-            astra_only_samples.extend(
-                missing_ids[: max(0, args.sample_limit - len(astra_only_samples))]
-            )
+            astra_only_samples.extend(missing_ids[: max(0, args.sample_limit - len(astra_only_samples))])
             scanned_count += len(batch)
 
     print(f"Astra exact scanned count: {scanned_count:,}")

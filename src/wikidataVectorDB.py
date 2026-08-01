@@ -1,7 +1,5 @@
 """Wrap AstraDB vector collection operations used by the pipeline."""
 
-import json
-import os
 import time
 import traceback
 
@@ -18,38 +16,25 @@ class AstraDBConnect:
         self,
         lang="en",
         entity_type="items",
-        config_path: str = "../API_tokens/datastax_api.json",
+        application_token: str | None = None,
+        api_endpoint: str | None = None,
+        collection_prefix: str | None = None,
     ):
         """Initialize a connection to one AstraDB vector collection."""
-        datastax_token = {}
-        if config_path and os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f_in:
-                datastax_token = json.load(f_in)
-
-        ASTRA_DB_APPLICATION_TOKEN = os.environ.get("ASTRA_DB_APPLICATION_TOKEN")
-        ASTRA_DB_API_ENDPOINT = os.environ.get("ASTRA_DB_API_ENDPOINT")
-        collection_prefix = os.environ.get("ASTRA_COLLECTION_PREFIX")
-
-        ASTRA_DB_APPLICATION_TOKEN = datastax_token.get(
-            "ASTRA_DB_APPLICATION_TOKEN", ASTRA_DB_APPLICATION_TOKEN
-        )
-        ASTRA_DB_API_ENDPOINT = datastax_token.get(
-            "ASTRA_DB_API_ENDPOINT", ASTRA_DB_API_ENDPOINT
-        )
-        collection_prefix = datastax_token.get("COLLECTION_PREFIX", collection_prefix)
-
-        if not ASTRA_DB_APPLICATION_TOKEN:
+        if not application_token:
             raise ValueError("Astra DB token not found.")
-        if not ASTRA_DB_API_ENDPOINT:
+        if not api_endpoint:
             raise ValueError("Astra DB endpoint not found.")
+        if not collection_prefix:
+            raise ValueError("Astra collection prefix not found.")
 
         self.entity_type = entity_type
         self.lang = lang
 
         timeout_options = TimeoutOptions(request_timeout_ms=1000000)
         api_options = APIOptions(timeout_options=timeout_options)
-        client = DataAPIClient(ASTRA_DB_APPLICATION_TOKEN, api_options=api_options)
-        database0 = client.get_database(ASTRA_DB_API_ENDPOINT)
+        client = DataAPIClient(application_token, api_options=api_options)
+        database0 = client.get_database(api_endpoint)
 
         collection_names = database0.list_collection_names()
         collection_name = f"{collection_prefix}_{entity_type}_{lang}"
@@ -111,9 +96,7 @@ class AstraDBConnect:
                     # Content is too large to publish
                     if truncated:
                         raise e
-                    update_fields["content"] = (
-                        update_fields["content"][:3000] + " [TRUNCATED]"
-                    )
+                    update_fields["content"] = update_fields["content"][:3000] + " [TRUNCATED]"
                     truncated = True
                 except Exception:
                     traceback.print_exc()

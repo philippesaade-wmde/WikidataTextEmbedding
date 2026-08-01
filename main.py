@@ -31,16 +31,8 @@ NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", "4"))
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
 LANG = os.environ.get("WD_LANG", os.environ.get("LANG", "en"))
 FALLBACK_LANG = os.environ.get("FALLBACK_LANG", LANG)
-WD_LANGS = tuple(
-    lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip()
-)
+WD_LANGS = tuple(lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip())
 
-JINA_API_PATH = os.environ.get("JINA_API_PATH", "./API_tokens/jina_api.json")
-ASTRA_API_PATH = os.environ.get("ASTRA_API_PATH", "./API_tokens/datastax_api.json")
-WD_HF_API_PATH = os.environ.get("WD_HF_API_PATH", "./API_tokens/wd_hf_api.json")
-VECTORS_HF_API_PATH = os.environ.get(
-    "VECTORS_HF_API_PATH", "./API_tokens/vectors_hf_api.json"
-)
 HF_DATA_DIR = os.environ.get("HF_DATA_DIR", "data")
 HF_CHUNK_SIZE = int(os.environ.get("HF_CHUNK_SIZE", "1000"))
 HF_BATCH_SIZE = int(os.environ.get("HF_BATCH_SIZE", "32"))
@@ -50,24 +42,28 @@ HF_BRANCH = os.environ.get("HF_BRANCH")
 VECTOR_HF_BRANCH = os.environ.get("VECTOR_HF_BRANCH")
 MERGE_HF_TO_MAIN = os.environ.get("MERGE_HF_TO_MAIN", "false").lower() == "true"
 PROPERTY_CONSTRAINT_PIDS = tuple(
-    pid.strip()
-    for pid in os.environ.get("PROPERTY_CONSTRAINT_PIDS", "P2302").split(",")
-    if pid.strip()
+    pid.strip() for pid in os.environ.get("PROPERTY_CONSTRAINT_PIDS", "P2302").split(",") if pid.strip()
 )
 
 SAVE_WD_TO_HF = os.environ.get("SAVE_WD_TO_HF", "false").lower() == "true"
 SAVE_VECTORS_TO_HF = os.environ.get("SAVE_VECTORS_TO_HF", "false").lower() == "true"
 SAVE_TO_VECTORDB = os.environ.get("SAVE_TO_VECTORDB", "false").lower() == "true"
-SAVE_SITELINK_VECTORS = (
-    os.environ.get("SAVE_SITELINK_VECTORS", "true").lower() == "true"
-)
-SAVE_NOSITELINK_VECTORS = (
-    os.environ.get("SAVE_NOSITELINK_VECTORS", "true").lower() == "true"
-)
+SAVE_SITELINK_VECTORS = os.environ.get("SAVE_SITELINK_VECTORS", "true").lower() == "true"
+SAVE_NOSITELINK_VECTORS = os.environ.get("SAVE_NOSITELINK_VECTORS", "true").lower() == "true"
 SAVE_LABELS = os.environ.get("SAVE_LABELS", "false").lower() == "true"
 DELETE_STALE_VECTORS = os.environ.get("DELETE_STALE_VECTORS", "false").lower() == "true"
 FORCE_DOWNLOAD_DUMP = os.environ.get("FORCE_DOWNLOAD_DUMP", "false").lower() == "true"
 RUN_STATS_PATH = os.environ.get("RUN_STATS_PATH", "data/run_stats.json")
+
+# ---- External service credentials ----
+JINA_API_KEY = os.environ.get("JINA_API_KEY")
+ASTRA_DB_APPLICATION_TOKEN = os.environ.get("ASTRA_DB_APPLICATION_TOKEN")
+ASTRA_DB_API_ENDPOINT = os.environ.get("ASTRA_DB_API_ENDPOINT")
+ASTRA_COLLECTION_PREFIX = os.environ.get("ASTRA_COLLECTION_PREFIX")
+WD_HF_TOKEN = os.environ.get("WD_HF_TOKEN")
+WD_HF_REPO_ID = os.environ.get("WD_HF_REPO_ID")
+VECTORS_HF_TOKEN = os.environ.get("VECTORS_HF_TOKEN")
+VECTORS_HF_REPO_ID = os.environ.get("VECTORS_HF_REPO_ID")
 
 VECTOR_TARGETS = []
 if SAVE_SITELINK_VECTORS:
@@ -116,9 +112,7 @@ def save_labels(items):
     if not data:
         return
     compressed = WikidataLabel._compress_labels(data)
-    WikidataLabel.add_bulk_labels(
-        [{"id": qid, "labels": labels} for qid, labels in compressed.items()]
-    )
+    WikidataLabel.add_bulk_labels([{"id": qid, "labels": labels} for qid, labels in compressed.items()])
     if STATS_TRACKER is not None:
         STATS_TRACKER.counter_add("labels_saved", len(data))
 
@@ -160,9 +154,7 @@ def item_to_text(item, label_factory=None):
     if TEXT_PROPERTY_FILTER is None:
         TEXT_PROPERTY_FILTER = WikidataPropertyFilter()
     drop_claim_pids = PROPERTY_CONSTRAINT_PIDS if item.id.startswith("P") else ()
-    item = TEXT_PROPERTY_FILTER.sort_and_filter_textifier(
-        item, drop_claim_pids=drop_claim_pids
-    )
+    item = TEXT_PROPERTY_FILTER.sort_and_filter_textifier(item, drop_claim_pids=drop_claim_pids)
 
     label_factory.resolve_all()
 
@@ -215,9 +207,7 @@ def push_to_hf(items, label_factory=None):
             fallback_lang=FALLBACK_LANG,
         )
     before_filter = len(items)
-    items = [
-        item for item in items if WD_HF_SCHOLARLY_FILTER.not_scholarly_article(item)
-    ]
+    items = [item for item in items if WD_HF_SCHOLARLY_FILTER.not_scholarly_article(item)]
     if STATS_TRACKER is not None:
         STATS_TRACKER.counter_add("wd_hf_skipped_scholarly", before_filter - len(items))
     if not items:
@@ -250,18 +240,12 @@ def save_vectors_to_hf():
                 [vector.get("id") for vector in vectors if vector and vector.get("id")]
             )
             if existing_ids:
-                vectors = [
-                    vector
-                    for vector in vectors
-                    if vector and vector.get("id") not in existing_ids
-                ]
+                vectors = [vector for vector in vectors if vector and vector.get("id") not in existing_ids]
             total += HF_PUBLISHER.publish_vector_batch(vectors)
     return total
 
 
-def push_vector_batch(
-    items, vector_cache, astra_db, counter_prefix, label_factory=None
-):
+def push_vector_batch(items, vector_cache, astra_db, counter_prefix, label_factory=None):
     """Embed and persist one filtered item batch to AstraDB and the local cache."""
     to_update, to_create = vector_cache.filter_for_update(items)
     if STATS_TRACKER is not None:
@@ -335,22 +319,14 @@ def push_to_vectorDB(items, label_factory=None):
         entity_type = target["entity_type"]
         if entity_type == "items":
             target_items = [
-                item
-                for item in items
-                if item.get("id", "").startswith("Q")
-                and VECTOR_ITEM_FILTER.filter(item)
+                item for item in items if item.get("id", "").startswith("Q") and VECTOR_ITEM_FILTER.filter(item)
             ]
         elif entity_type == "properties":
             target_items = [
-                item
-                for item in items
-                if item.get("id", "").startswith("P")
-                and VECTOR_ITEM_FILTER.filter(item)
+                item for item in items if item.get("id", "").startswith("P") and VECTOR_ITEM_FILTER.filter(item)
             ]
         elif entity_type == "items_nositelinks":
-            target_items = [
-                item for item in items if VECTOR_NOSITELINK_FILTER.filter(item)
-            ]
+            target_items = [item for item in items if VECTOR_NOSITELINK_FILTER.filter(item)]
         else:
             raise ValueError(f"Unknown vector entity type: {entity_type}")
         batches.append((target, target_items))
@@ -399,13 +375,9 @@ def init_worker(enable_vector=False):
             ASTRADBS,
         )
     ):
-        VECTOR_ITEM_FILTER = WikidataSitelinkFilter(
-            lang=LANG, fallback_lang=FALLBACK_LANG
-        )
-        VECTOR_NOSITELINK_FILTER = WikidataNoSitelinkFilter(
-            lang=LANG, fallback_lang=FALLBACK_LANG
-        )
-        VECTOR_EMBEDDER = JinaAIAPIEmbedder(config_path=JINA_API_PATH)
+        VECTOR_ITEM_FILTER = WikidataSitelinkFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
+        VECTOR_NOSITELINK_FILTER = WikidataNoSitelinkFilter(lang=LANG, fallback_lang=FALLBACK_LANG)
+        VECTOR_EMBEDDER = JinaAIAPIEmbedder(api_key=JINA_API_KEY)
         VECTOR_CACHES = {
             entity_type: get_db_connection(
                 lang=LANG,
@@ -418,7 +390,9 @@ def init_worker(enable_vector=False):
             entity_type: AstraDBConnect(
                 lang=LANG,
                 entity_type=entity_type,
-                config_path=ASTRA_API_PATH,
+                application_token=ASTRA_DB_APPLICATION_TOKEN,
+                api_endpoint=ASTRA_DB_API_ENDPOINT,
+                collection_prefix=ASTRA_COLLECTION_PREFIX,
             )
             for entity_type in VECTOR_ENTITY_TYPES
         }
@@ -450,9 +424,7 @@ def create_dump_reader():
             HF_BRANCH = dump_date.replace("-", "")
         if not VECTOR_HF_BRANCH:
             VECTOR_HF_BRANCH = HF_BRANCH
-    print(
-        f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}"
-    )
+    print(f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}")
 
     return reader
 
@@ -474,18 +446,13 @@ def resolve_hf_branches_without_dump():
         VECTOR_HF_BRANCH = HF_BRANCH
 
     if SAVE_WD_TO_HF and MERGE_HF_TO_MAIN and not HF_BRANCH:
-        raise ValueError(
-            "Set HF_BRANCH or DUMP_DATE when MERGE_HF_TO_MAIN=true and SAVE_WD_TO_HF=true."
-        )
+        raise ValueError("Set HF_BRANCH or DUMP_DATE when MERGE_HF_TO_MAIN=true and SAVE_WD_TO_HF=true.")
     if SAVE_VECTORS_TO_HF and MERGE_HF_TO_MAIN and not VECTOR_HF_BRANCH:
         raise ValueError(
-            "Set VECTOR_HF_BRANCH, HF_BRANCH, or DUMP_DATE when MERGE_HF_TO_MAIN=true "
-            "and SAVE_VECTORS_TO_HF=true."
+            "Set VECTOR_HF_BRANCH, HF_BRANCH, or DUMP_DATE when MERGE_HF_TO_MAIN=true and SAVE_VECTORS_TO_HF=true."
         )
 
-    print(
-        f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}"
-    )
+    print(f"Dump date: {DUMP_DATE}\n HF branch: {HF_BRANCH}\n Vector HF branch: {VECTOR_HF_BRANCH}")
 
 
 def reset_runtime_state():
@@ -554,7 +521,8 @@ def run_wd_to_hf_stage():
             "merged_to_main": True,
             "merge_to_main": WikidataHFDatasetPublisher.merge_to_main(
                 branch=HF_BRANCH,
-                config_path=WD_HF_API_PATH,
+                token=WD_HF_TOKEN,
+                repo_id=WD_HF_REPO_ID,
                 batch_size=HF_CHUNK_SIZE,
             ),
         }
@@ -573,7 +541,8 @@ def run_wd_to_hf_stage():
     )
     HF_PUBLISHER = WikidataHFDatasetPublisher(
         branch=HF_BRANCH,
-        config_path=WD_HF_API_PATH,
+        token=WD_HF_TOKEN,
+        repo_id=WD_HF_REPO_ID,
         storage_chunk_size=HF_CHUNK_SIZE,
         memory_chunk_size=HF_BATCH_SIZE,
         queue_size=HF_QUEUE_SIZE,
@@ -695,19 +664,14 @@ def run_vectordb_stages():
                 stale_targets.append((target, cache, cache.count_stale(DUMP_DATE)))
 
             stale_count_by_entity_type = {
-                target["entity_type"]: stale_count
-                for target, _, stale_count in stale_targets
+                target["entity_type"]: stale_count for target, _, stale_count in stale_targets
             }
             total_stale_count = sum(stale_count_by_entity_type.values())
-            print(
-                f"\nStale cache entries for '{lang}' (last_dump < {DUMP_DATE}): {total_stale_count}"
-            )
+            print(f"\nStale cache entries for '{lang}' (last_dump < {DUMP_DATE}): {total_stale_count}")
             for entity_type, stale_count in stale_count_by_entity_type.items():
                 print(f"  {entity_type}: {stale_count}")
             try:
-                confirmed = (
-                    input("Delete these entries? [y/N]: ").strip().lower() == "y"
-                )
+                confirmed = input("Delete these entries? [y/N]: ").strip().lower() == "y"
             except EOFError:
                 confirmed = False
             astra_deleted_by_entity_type = {}
@@ -717,13 +681,13 @@ def run_vectordb_stages():
                     astra = AstraDBConnect(
                         lang=LANG,
                         entity_type=entity_type,
-                        config_path=ASTRA_API_PATH,
+                        application_token=ASTRA_DB_APPLICATION_TOKEN,
+                        api_endpoint=ASTRA_DB_API_ENDPOINT,
+                        collection_prefix=ASTRA_COLLECTION_PREFIX,
                     )
                     astra_deleted_by_entity_type[entity_type] = 0
                     for batch_ids in cache.iter_stale_batches(DUMP_DATE):
-                        astra_deleted_by_entity_type[entity_type] += (
-                            astra.delete_documents(batch_ids)
-                        )
+                        astra_deleted_by_entity_type[entity_type] += astra.delete_documents(batch_ids)
                 print(
                     f"Deleted {sum(astra_deleted_by_entity_type.values())} documents from AstraDB "
                     f"and {total_stale_count} entries from local cache."
@@ -752,7 +716,8 @@ def run_vectors_to_hf_stage():
         print(f"Merging vector HF branch {VECTOR_HF_BRANCH} -> main")
         merge_stats = WikidataHFDatasetPublisher.merge_to_main(
             branch=VECTOR_HF_BRANCH,
-            config_path=VECTORS_HF_API_PATH,
+            token=VECTORS_HF_TOKEN,
+            repo_id=VECTORS_HF_REPO_ID,
             batch_size=HF_CHUNK_SIZE,
         )
         for lang in languages:
@@ -798,7 +763,8 @@ def run_vectors_to_hf_stage():
         stage_name = f"vectors_to_hf:{lang}"
         HF_PUBLISHER = WikidataHFDatasetPublisher(
             branch=VECTOR_HF_BRANCH,
-            config_path=VECTORS_HF_API_PATH,
+            token=VECTORS_HF_TOKEN,
+            repo_id=VECTORS_HF_REPO_ID,
             storage_chunk_size=HF_CHUNK_SIZE,
             memory_chunk_size=HF_BATCH_SIZE,
             queue_size=HF_QUEUE_SIZE,
@@ -826,13 +792,10 @@ def run_pipeline():
     global STATS_TRACKER
 
     if (
-        SAVE_TO_VECTORDB
-        or DELETE_STALE_VECTORS
-        or (SAVE_VECTORS_TO_HF and not MERGE_HF_TO_MAIN)
+        SAVE_TO_VECTORDB or DELETE_STALE_VECTORS or (SAVE_VECTORS_TO_HF and not MERGE_HF_TO_MAIN)
     ) and not VECTOR_TARGETS:
         raise ValueError(
-            "At least one of SAVE_SITELINK_VECTORS or SAVE_NOSITELINK_VECTORS must be true "
-            "when running vector stages."
+            "At least one of SAVE_SITELINK_VECTORS or SAVE_NOSITELINK_VECTORS must be true when running vector stages."
         )
 
     if (

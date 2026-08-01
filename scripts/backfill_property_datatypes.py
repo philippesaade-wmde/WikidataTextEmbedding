@@ -23,13 +23,13 @@ READER_BATCH_SIZE = int(os.environ.get("DATATYPE_BACKFILL_READER_BATCH_SIZE", "5
 NUM_PROCESSES = int(os.environ.get("NUM_PROCESSES", "4"))
 DUMP_PATH = os.environ.get("DUMP_PATH", "data/wd_dump.gz")
 LANG = os.environ.get("WD_LANG", "en")
-WD_LANGS = tuple(
-    lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip()
-)
-ASTRA_API_PATH = os.environ.get("ASTRA_API_PATH", "./API_tokens/datastax_api.json")
+WD_LANGS = tuple(lang.strip() for lang in os.environ.get("WD_LANGS", "").split(",") if lang.strip())
 UPDATE_BATCH_SIZE = int(os.environ.get("DATATYPE_BACKFILL_BATCH_SIZE", "250"))
 APPLY = os.environ.get("BACKFILL_APPLY", "false").lower() == "true"
 FORCE_DOWNLOAD_DUMP = os.environ.get("FORCE_DOWNLOAD_DUMP", "false").lower() == "true"
+ASTRA_DB_APPLICATION_TOKEN = os.environ.get("ASTRA_DB_APPLICATION_TOKEN")
+ASTRA_DB_API_ENDPOINT = os.environ.get("ASTRA_DB_API_ENDPOINT")
+ASTRA_COLLECTION_PREFIX = os.environ.get("ASTRA_COLLECTION_PREFIX")
 
 
 # ---- Process-local runtime state ----
@@ -47,7 +47,11 @@ def init_backfill_worker() -> None:
     languages = WD_LANGS or (LANG,)
     ASTRADBS = {
         lang: AstraDBConnect(
-            lang=lang, entity_type="properties", config_path=ASTRA_API_PATH
+            lang=lang,
+            entity_type="properties",
+            application_token=ASTRA_DB_APPLICATION_TOKEN,
+            api_endpoint=ASTRA_DB_API_ENDPOINT,
+            collection_prefix=ASTRA_COLLECTION_PREFIX,
         )
         for lang in languages
     }
@@ -66,9 +70,7 @@ def backfill_property_datatypes(items: list[dict]) -> None:
             pids_by_datatype[datatype].append(pid)
 
     with PROPERTY_COUNT.get_lock():
-        PROPERTY_COUNT.value += sum(
-            len(property_ids) for property_ids in pids_by_datatype.values()
-        )
+        PROPERTY_COUNT.value += sum(len(property_ids) for property_ids in pids_by_datatype.values())
     if not APPLY or not pids_by_datatype:
         return
 
@@ -82,9 +84,7 @@ def backfill_property_datatypes(items: list[dict]) -> None:
                     {"$set": {"metadata.DataType": datatype}},
                 )
                 update_info = result.update_info or {}
-                updated_documents += update_info.get(
-                    "nModified", update_info.get("n", 0)
-                )
+                updated_documents += update_info.get("nModified", update_info.get("n", 0))
 
     with UPDATED_DOCUMENT_COUNT.get_lock():
         UPDATED_DOCUMENT_COUNT.value += updated_documents

@@ -52,18 +52,18 @@ The vector DB pass also writes a separate no-sitelink item collection for `Q*` i
   - `LastModified`
   - `DumpDate`
 
-## Credentials and Token Files
+## Credentials
 
-By default, `main.py` reads token/config files from `API_tokens/`:
+Credentials are read from environment variables by the entrypoint and passed to
+the service classes. For local runs, keep them in `.env` and let your runner
+load them.
 
-- `API_tokens/jina_api.json`
-  - `{"API_KEY": "..."}`
-- `API_tokens/datastax_api.json`
-  - `{"ASTRA_DB_APPLICATION_TOKEN": "...", "ASTRA_DB_API_ENDPOINT": "...", "COLLECTION_PREFIX": "..."}`
-- `API_tokens/wd_hf_api.json`
-  - `{"REPO_ID": "...", "API_KEY": "..."}`
-- `API_tokens/vectors_hf_api.json`
-  - `{"REPO_ID": "...", "API_KEY": "..."}`
+- `JINA_API_KEY`
+- `ASTRA_DB_APPLICATION_TOKEN`
+- `ASTRA_DB_API_ENDPOINT`
+- `ASTRA_COLLECTION_PREFIX`
+- `WD_HF_TOKEN` and `WD_HF_REPO_ID`
+- `VECTORS_HF_TOKEN` and `VECTORS_HF_REPO_ID`
 
 ## Environment Variables
 
@@ -106,8 +106,10 @@ By default, `main.py` reads token/config files from `API_tokens/`:
 |---|---|---|
 | `HF_BRANCH` | dump date (`YYYYMMDD`) | Branch for cleaned WD dataset uploads |
 | `VECTOR_HF_BRANCH` | `HF_BRANCH` | Branch for vector dataset uploads |
-| `WD_HF_API_PATH` | `./API_tokens/wd_hf_api.json` | WD dataset token/repo config |
-| `VECTORS_HF_API_PATH` | `./API_tokens/vectors_hf_api.json` | Vector dataset token/repo config |
+| `WD_HF_TOKEN` | none | Hugging Face token for cleaned WD dataset uploads |
+| `WD_HF_REPO_ID` | none | Hugging Face repo ID for cleaned WD dataset uploads |
+| `VECTORS_HF_TOKEN` | none | Hugging Face token for vector dataset uploads |
+| `VECTORS_HF_REPO_ID` | none | Hugging Face repo ID for vector dataset uploads |
 | `MERGE_HF_TO_MAIN` | `false` | Merge the configured HF branch into `main` instead of publishing chunks |
 
 All languages use the configured vector dataset branch.

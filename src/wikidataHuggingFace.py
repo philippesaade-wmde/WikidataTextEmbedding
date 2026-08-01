@@ -1,6 +1,5 @@
 """Publish Wikidata-derived rows and vectors to Hugging Face datasets."""
 
-import json
 import os
 import re
 import tempfile
@@ -34,7 +33,8 @@ class WikidataHFDatasetPublisher:
     def __init__(
         self,
         branch: str,
-        config_path: str | None = None,
+        token: str | None = None,
+        repo_id: str | None = None,
         storage_chunk_size: int = 1000,
         memory_chunk_size: int = 20,
         queue_size: int = 128,
@@ -49,13 +49,8 @@ class WikidataHFDatasetPublisher:
         self.branch = branch
         self.data_dir = data_dir
 
-        self.token = os.environ.get("HF_TOKEN")
-        self.repo_id = os.environ.get("HF_REPO_ID")
-        if config_path and os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f_in:
-                data = json.load(f_in)
-                self.token = data.get("API_KEY", self.token)
-                self.repo_id = data.get("REPO_ID", self.repo_id)
+        self.token = token
+        self.repo_id = repo_id
 
         if not self.token:
             raise ValueError("Hugging Face API token not found.")
@@ -88,15 +83,9 @@ class WikidataHFDatasetPublisher:
 
         api.create_branch(repo_id=self.repo_id, branch=self.branch, repo_type="dataset")
 
-        files = api.list_repo_files(
-            repo_id=self.repo_id, repo_type="dataset", revision=self.branch
-        )
+        files = api.list_repo_files(repo_id=self.repo_id, repo_type="dataset", revision=self.branch)
 
-        ops = [
-            CommitOperationDelete(path_in_repo=f)
-            for f in files
-            if f.startswith("data/")
-        ]
+        ops = [CommitOperationDelete(path_in_repo=f) for f in files if f.startswith("data/")]
 
         if ops:
             self._create_commit_with_retry(
@@ -145,7 +134,8 @@ class WikidataHFDatasetPublisher:
     @staticmethod
     def merge_to_main(
         branch: str,
-        config_path: str | None = None,
+        token: str | None = None,
+        repo_id: str | None = None,
         batch_size: int = 1000,
     ) -> dict:
         """Make main match a published branch without downloading parquet chunks.
@@ -154,13 +144,6 @@ class WikidataHFDatasetPublisher:
         and .gitattributes, are downloaded and uploaded.
         """
         target_branch = "main"
-        token = os.environ.get("HF_TOKEN")
-        repo_id = os.environ.get("HF_REPO_ID")
-        if config_path and os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f_in:
-                data = json.load(f_in)
-                token = data.get("API_KEY", token)
-                repo_id = data.get("REPO_ID", repo_id)
 
         if not token:
             raise ValueError("Hugging Face API token not found.")
@@ -198,12 +181,8 @@ class WikidataHFDatasetPublisher:
         )
 
         files_to_delete = sorted(target_files - source_files)
-        files_to_copy = sorted(
-            path for path in source_files if path.endswith(".parquet")
-        )
-        files_to_add = sorted(
-            path for path in source_files if not path.endswith(".parquet")
-        )
+        files_to_copy = sorted(path for path in source_files if path.endswith(".parquet"))
+        files_to_add = sorted(path for path in source_files if not path.endswith(".parquet"))
         batch_size = max(1, int(batch_size))
         commits = 0
 
@@ -294,25 +273,19 @@ class WikidataHFDatasetPublisher:
             repo_type="dataset",
             revision=self.branch,
         )
-        chunk_indices = [
-            int(match.group(1)) for f in files if (match := pattern.match(f))
-        ]
+        chunk_indices = [int(match.group(1)) for f in files if (match := pattern.match(f))]
         return max(chunk_indices, default=-1) + 1
 
     def _publish_records(self):
         api = HfApi(token=self.token)
         while True:
-            chunk_fd, chunk_path = tempfile.mkstemp(
-                prefix="hf_chunk_", suffix=".parquet"
-            )
+            chunk_fd, chunk_path = tempfile.mkstemp(prefix="hf_chunk_", suffix=".parquet")
             os.close(chunk_fd)
 
             num_records = 0
             reached_end = False
             try:
-                num_records, reached_end, chunk_ids = self._write_chunk_parquet(
-                    chunk_path
-                )
+                num_records, reached_end, chunk_ids = self._write_chunk_parquet(chunk_path)
 
                 if num_records == 0:
                     if reached_end:
@@ -425,9 +398,7 @@ class WikidataHFDatasetPublisher:
 
         self.uploader.join()
         if self.uploader.exitcode not in (0, None):
-            raise RuntimeError(
-                f"HF uploader process exited with non-zero code ({self.uploader.exitcode})."
-            )
+            raise RuntimeError(f"HF uploader process exited with non-zero code ({self.uploader.exitcode}).")
         self.uploader = None
         return 0
 
@@ -449,9 +420,7 @@ class WikidataHFDatasetPublisher:
                 except Full:
                     with self.closed.get_lock():
                         if self.closed.value == 1:
-                            raise RuntimeError(
-                                "Cannot add records after flush has started."
-                            )
+                            raise RuntimeError("Cannot add records after flush has started.")
                     continue
 
         return len(valid_records)
@@ -465,9 +434,7 @@ class WikidataHFDatasetPublisher:
                     {
                         "id": item["id"],
                         "labels": orjson.dumps(item["labels"]).decode("utf-8"),
-                        "descriptions": orjson.dumps(item["descriptions"]).decode(
-                            "utf-8"
-                        ),
+                        "descriptions": orjson.dumps(item["descriptions"]).decode("utf-8"),
                         "aliases": orjson.dumps(item["aliases"]).decode("utf-8"),
                         "sitelinks": orjson.dumps(item["sitelinks"]).decode("utf-8"),
                         "claims": orjson.dumps(item["claims"]).decode("utf-8"),

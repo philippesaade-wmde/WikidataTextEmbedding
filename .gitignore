@@ -1,4 +1,7 @@
 # API tokens
+.env
+.env.*
+!.env.example
 API_tokens/*
 *secret*
 
