@@ -6,11 +6,98 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import gzip
 import json
 import os
 from pathlib import Path
+import time
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 
 from tqdm import tqdm
+
+
+WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
+USER_AGENT = "WikidataTextEmbedding pairwise evaluation textifier"
+
+
+def read_pairwise_rows(path: Path) -> list[dict[str, str]]:
+    """Read a real CSV, or a gzip-compressed Gnumeric workbook mislabeled as CSV."""
+    if path.read_bytes()[:2] != b"\x1f\x8b":
+        with path.open(encoding="utf-8", newline="") as handle:
+            return list(csv.DictReader(handle))
+
+    with gzip.open(path, "rb") as handle:
+        root = ET.parse(handle).getroot()
+
+    cells: dict[tuple[int, int], str] = {}
+    max_row = 0
+    max_col = 0
+    for cell in root.iter():
+        if not cell.tag.endswith("Cell"):
+            continue
+        row = int(cell.attrib["Row"])
+        col = int(cell.attrib["Col"])
+        cells[(row, col)] = cell.text or ""
+        max_row = max(max_row, row)
+        max_col = max(max_col, col)
+
+    header = [cells.get((0, col), "") for col in range(max_col + 1)]
+    return [
+        dict(zip(header, [cells.get((row, col), "") for col in range(max_col + 1)]))
+        for row in range(1, max_row + 1)
+    ]
+
+
+def fetch_wikidata_entities(
+    ids: list[str],
+    *,
+    languages: list[str],
+    batch_size: int = 50,
+    max_retries: int = 5,
+    retry_sleep_seconds: float = 5.0,
+) -> dict[str, dict]:
+    """Fetch full entity JSON from the public Wikidata API."""
+    entities: dict[str, dict] = {}
+    language_param = "|".join(dict.fromkeys([*languages, "mul", "en"]))
+
+    for start in tqdm(range(0, len(ids), batch_size), desc="Fetching entities", unit="batch"):
+        batch = ids[start : start + batch_size]
+        params = {
+            "action": "wbgetentities",
+            "format": "json",
+            "formatversion": "2",
+            "ids": "|".join(batch),
+            "props": "info|labels|descriptions|aliases|claims|sitelinks|datatype",
+            "languages": language_param,
+        }
+        url = f"{WIKIDATA_API_URL}?{urllib.parse.urlencode(params)}"
+
+        for attempt in range(max_retries + 1):
+            try:
+                request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except Exception:
+                if attempt == max_retries:
+                    raise
+                time.sleep(retry_sleep_seconds * (attempt + 1))
+
+        entities.update(
+            {
+                entity_id: entity
+                for entity_id, entity in payload.get("entities", {}).items()
+                if not entity.get("missing")
+            }
+        )
+
+    missing = sorted(set(ids) - set(entities))
+    if missing:
+        raise ValueError(f"Wikidata API did not return {len(missing)} IDs, first missing IDs: {missing[:20]}")
+
+    return entities
 
 
 def main() -> None:
@@ -22,8 +109,9 @@ def main() -> None:
     parser.add_argument("--fallback-language", default=os.environ.get("FALLBACK_LANG"))
     args = parser.parse_args()
 
-    with args.input_csv.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
+    rows = read_pairwise_rows(args.input_csv)
+    if not rows:
+        raise ValueError(f"No rows found in {args.input_csv}")
 
     ids = list(
         dict.fromkeys(
@@ -34,16 +122,7 @@ def main() -> None:
         dict.fromkeys(row["language"] for row in rows)
     )
 
-    from WikidataTextifier.src import get_wikibase_json_by_ids
-
-    entities = {}
-    for start in tqdm(range(0, len(ids), 50), desc="Fetching entities", unit="batch"):
-        entities.update(
-            get_wikibase_json_by_ids(
-                ids[start : start + 50],
-                props="labels|descriptions|aliases|claims",
-            )
-        )
+    entities = fetch_wikidata_entities(ids, languages=languages)
 
     import main as pipeline_main
     from main import item_to_text
