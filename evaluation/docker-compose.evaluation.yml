@@ -1,4 +1,0 @@
-services:
-  pipeline:
-    volumes:
-      - ./evaluation:/workspace/evaluation
