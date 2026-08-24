@@ -16,14 +16,9 @@ class MDenseOn(EmbeddingModel):
     output_folder = "mDenseOn"
     repository = "lightonai/mDenseOn"
 
-    def __init__(self, timeout: int):
+    def __init__(self):
         """Download the model if needed and load it on the best local device."""
-        super().__init__(timeout)
-        model_path = self.download_model_snapshot(
-            self.repository,
-            model_dir_env="MDENSEON_MODEL_DIR",
-            timeout=timeout,
-        )
+        model_path = self.download_model_snapshot()
 
         self.device = self.select_device()
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -63,10 +58,7 @@ class MDenseOn(EmbeddingModel):
 
     def embed(self, texts: list[str], roles: list[Role]) -> np.ndarray:
         """Embed prepared texts locally using CLS pooling."""
-        if len(texts) != len(roles):
-            raise ValueError("texts and roles must have the same length")
-        for role in roles:
-            self.validate_role(role)
+        self.validate_batch(texts, roles)
         if not texts:
             return np.empty((0, self.model.config.hidden_size), dtype=np.float32)
 

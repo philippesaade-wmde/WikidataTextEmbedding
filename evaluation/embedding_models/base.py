@@ -28,26 +28,16 @@ class EmbeddingModel(ABC):
 
     key: ClassVar[str]
     output_folder: ClassVar[str]
-
-    def __init__(self, timeout: int):
-        """Store the HTTP request timeout."""
-        self.timeout = timeout
+    repository: ClassVar[str]
 
     @classmethod
-    def download_model_snapshot(
-        cls,
-        repository: str,
-        *,
-        model_dir_env: str,
-        timeout: int,
-    ) -> str:
+    def download_model_snapshot(cls) -> str:
         """Download a model snapshot into its configured local directory."""
-        model_root = Path(os.environ.get(model_dir_env, DEFAULT_MODEL_DIR)).expanduser()
+        model_root = Path(os.environ.get("EMBEDDING_MODEL_DIR", DEFAULT_MODEL_DIR)).expanduser()
         return snapshot_download(
-            repo_id=repository,
+            repo_id=cls.repository,
             local_dir=model_root / cls.output_folder,
             token=os.environ.get("HF_TOKEN") or None,
-            etag_timeout=timeout,
         )
 
     @staticmethod
@@ -69,6 +59,14 @@ class EmbeddingModel(ABC):
         """Raise an error when an input role is not supported."""
         if role not in VALID_ROLES:
             raise ValueError(f"Unsupported embedding role: {role!r}")
+
+    @classmethod
+    def validate_batch(cls, texts: list[str], roles: list[Role]) -> None:
+        """Validate that every input text has a supported role."""
+        if len(texts) != len(roles):
+            raise ValueError("texts and roles must have the same length")
+        for role in roles:
+            cls.validate_role(role)
 
     @abstractmethod
     def embed(self, texts: list[str], roles: list[Role]) -> np.ndarray:

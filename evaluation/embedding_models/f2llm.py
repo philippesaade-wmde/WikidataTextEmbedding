@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 import numpy as np
 import torch
 import torch.nn.functional as functional
@@ -15,22 +13,16 @@ from .base import EmbeddingModel, Role
 class F2LLMModel(EmbeddingModel):
     """Common local F2LLM behavior with use-case-specific query prompts."""
 
-    repository: ClassVar[str]
-    query_instructions: ClassVar[dict[str, str]] = {
+    query_instructions: dict[str, str] = {
         "question": "Given a question, retrieve passages containing the information needed to answer it.",
         "entity_linking": "Given a sentence, retrieve passages about the entity mentioned in it.",
         "disambiguation": "Given a sentence with an ambiguous mention, retrieve passages about the intended entity.",
         "property_linking": "Given a question, retrieve passages about the Wikidata property needed to answer it.",
     }
 
-    def __init__(self, timeout: int):
+    def __init__(self):
         """Download the model if needed and load it on the best local device."""
-        super().__init__(timeout)
-        model_path = self.download_model_snapshot(
-            self.repository,
-            model_dir_env="F2LLM_MODEL_DIR",
-            timeout=timeout,
-        )
+        model_path = self.download_model_snapshot()
 
         self.device = self.select_device()
         dtype = self._dtype_for_device(self.device)
@@ -51,10 +43,7 @@ class F2LLMModel(EmbeddingModel):
         cls.validate_role(role)
         if role == "document":
             return text
-        try:
-            instruction = cls.query_instructions[role]
-        except KeyError as error:
-            raise ValueError(f"Unsupported F2LLM query role: {role!r}") from error
+        instruction = cls.query_instructions[role]
         return f"Instruct: {instruction}\nQuery: {text}"
 
     @staticmethod
@@ -67,10 +56,7 @@ class F2LLMModel(EmbeddingModel):
 
     def embed(self, texts: list[str], roles: list[Role]) -> np.ndarray:
         """Embed a batch with the locally loaded model."""
-        if len(texts) != len(roles):
-            raise ValueError("texts and roles must have the same length")
-        for role in roles:
-            self.validate_role(role)
+        self.validate_batch(texts, roles)
         if not texts:
             return np.empty((0, self.model.config.hidden_size), dtype=np.float32)
 

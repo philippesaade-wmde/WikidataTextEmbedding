@@ -20,9 +20,8 @@ class JinaEmbeddingsV3(EmbeddingModel):
     dimensions = 512
     endpoint = "https://api.jina.ai/v1/embeddings"
 
-    def __init__(self, timeout: int):
+    def __init__(self):
         """Initialize the authenticated Jina API session."""
-        super().__init__(timeout)
         api_key = os.environ.get("JINA_API_KEY", "").strip()
         if not api_key:
             raise ValueError("Set JINA_API_KEY before embedding with Jina")
@@ -36,10 +35,7 @@ class JinaEmbeddingsV3(EmbeddingModel):
 
     def embed(self, texts: list[str], roles: list[Role]) -> np.ndarray:
         """Embed a batch, using Jina's query task for queries and passage task otherwise."""
-        if len(texts) != len(roles):
-            raise ValueError("texts and roles must have the same length")
-        for role in roles:
-            self.validate_role(role)
+        self.validate_batch(texts, roles)
 
         vectors: list[np.ndarray | None] = [None] * len(texts)
         for task in ("retrieval.query", "retrieval.passage"):
@@ -56,7 +52,6 @@ class JinaEmbeddingsV3(EmbeddingModel):
                     "late_chunking": False,
                     "input": [texts[index] for index in indices],
                 },
-                timeout=self.timeout,
             )
             try:
                 response.raise_for_status()
@@ -83,8 +78,4 @@ class JinaEmbeddingsV3(EmbeddingModel):
 
     @staticmethod
     def _task_for_role(role: str) -> str:
-        if role == "document":
-            return "retrieval.passage"
-        if role in {"question", "entity_linking", "disambiguation", "property_linking"}:
-            return "retrieval.query"
-        raise ValueError(f"Unsupported input role: {role!r}")
+        return "retrieval.passage" if role == "document" else "retrieval.query"

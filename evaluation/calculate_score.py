@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 from collections import defaultdict
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -17,10 +18,9 @@ try:
         DEFAULT_MODEL,
         OUTPUT_DIR,
         TEXTIFIED_DIR,
+        USE_CASE_ROLES,
         load_existing,
         make_input_id,
-        parse_texts,
-        role_for_use_case,
     )
     from .embedding_models import MODEL_CLASSES, EmbeddingModel
 except ImportError:  # Running this file directly: python evaluation/calculate_score.py
@@ -28,10 +28,9 @@ except ImportError:  # Running this file directly: python evaluation/calculate_s
         DEFAULT_MODEL,
         OUTPUT_DIR,
         TEXTIFIED_DIR,
+        USE_CASE_ROLES,
         load_existing,
         make_input_id,
-        parse_texts,
-        role_for_use_case,
     )
     from embedding_models import MODEL_CLASSES, EmbeddingModel  # type: ignore[no-redef]
 
@@ -48,6 +47,11 @@ LANGUAGE_MATCH = "same"
 LANGUAGE_DIFFERENT = "diff"
 LANGUAGE_SKIP_PREFIX = "__language_relation__"
 AVERAGE_EMBEDDING_LANGUAGE = "avg"
+
+
+def parse_texts(value: str) -> list[str]:
+    """Parse textified chunks stored as a JSON list."""
+    return [str(text) for text in json.loads(value or "[]") if text]
 
 
 @dataclass(frozen=True)
@@ -116,7 +120,7 @@ def score_output(
             query_language_matches = query_language == embedding_language
             language_group = LANGUAGE_MATCH if query_language_matches else LANGUAGE_DIFFERENT
 
-            query_role = role_for_use_case(use_case)
+            query_role = USE_CASE_ROLES[use_case]
             query_text = model_class.prepare_text(query_role, query)
             query_id = make_input_id(query_role, query_text)
             correct_ids = [
@@ -218,7 +222,7 @@ def score_average_embeddings(
             query = first_row.get("query", "")
             if not query:
                 continue
-            query_role = role_for_use_case(use_case)
+            query_role = USE_CASE_ROLES[use_case]
             query_text = model_class.prepare_text(query_role, query)
             query_id = make_input_id(query_role, query_text)
             query_embeddings: list[np.ndarray] = []
