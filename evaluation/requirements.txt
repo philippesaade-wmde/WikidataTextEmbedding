@@ -1,0 +1,6 @@
+huggingface-hub>=0.36.0
+numpy>=2.0.0
+requests>=2.31.0
+torch>=2.0.0
+tqdm>=4.67.0
+transformers>=4.57.5
