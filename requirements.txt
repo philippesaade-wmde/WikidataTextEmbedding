@@ -209,6 +209,8 @@ pymongo==4.17.0
     # via astrapy
 python-dateutil==2.9.0.post0
     # via pandas
+python-dotenv==1.2.3
+    # via wikidatatextembedding
 pyyaml==6.0.3
     # via
     #   datasets
@@ -217,7 +219,9 @@ pyyaml==6.0.3
 regex==2026.4.4
     # via transformers
 requests==2.33.1
-    # via datasets
+    # via
+    #   datasets
+    #   wikidatatextembedding
 rich==14.3.3
     # via typer
 safetensors==0.7.0
