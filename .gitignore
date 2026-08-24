@@ -7,7 +7,9 @@ API_tokens/*
 
 # Data
 data/*
+evaluation/embeddings/
 evaluation/models/
+evaluation/results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
