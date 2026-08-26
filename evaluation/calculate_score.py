@@ -169,6 +169,9 @@ def score_average_embeddings(
             average_query = np.mean(query_embeddings, axis=0)
             average_correct = np.mean(correct_embeddings, axis=0)
             average_incorrect = np.mean(incorrect_embeddings, axis=0)
+            average_query /= np.linalg.norm(average_query)
+            average_correct /= np.linalg.norm(average_correct)
+            average_incorrect /= np.linalg.norm(average_incorrect)
             correct_similarity = float(
                 model_class.calculate_similarity(
                     average_query,
