@@ -21,13 +21,9 @@ class MDenseOn(EmbeddingModel):
         model_path = self.download_model_snapshot()
 
         self.device = self.select_device()
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            local_files_only=True,
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         self.model = AutoModel.from_pretrained(
             model_path,
-            local_files_only=True,
             torch_dtype=torch.float32,
         )
         self.model.to(self.device)

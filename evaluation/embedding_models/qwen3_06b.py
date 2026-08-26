@@ -28,14 +28,10 @@ class Qwen306B(EmbeddingModel):
         model_path = self.download_model_snapshot()
 
         self.device = self.select_device()
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            local_files_only=True,
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         self.tokenizer.padding_side = "left"
         self.model = AutoModel.from_pretrained(
             model_path,
-            local_files_only=True,
             torch_dtype=self._dtype_for_device(self.device),
         )
         self.model.to(self.device)

@@ -26,12 +26,11 @@ class F2LLMModel(EmbeddingModel):
 
         self.device = self.select_device()
         dtype = self._dtype_for_device(self.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         # The model card's EOS pooling assumes right padding.
         self.tokenizer.padding_side = "right"
         self.model = AutoModel.from_pretrained(
             model_path,
-            local_files_only=True,
             torch_dtype=dtype,
         )
         self.model.to(self.device)
