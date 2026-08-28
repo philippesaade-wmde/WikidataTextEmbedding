@@ -1,5 +1,6 @@
 """Embedding model implementations available to the evaluation script."""
 
+from .arctic_v2 import ArcticV2
 from .base import EmbeddingModel
 from .bge_m3 import BGEM3
 from .e5_instruct import E5Instruct
@@ -14,6 +15,7 @@ from .qwen3_06b import Qwen306B
 MODEL_CLASSES: dict[str, type[EmbeddingModel]] = {
     model.key: model
     for model in (
+        ArcticV2,
         BGEM3,
         E5Instruct,
         F2LLM330M,
