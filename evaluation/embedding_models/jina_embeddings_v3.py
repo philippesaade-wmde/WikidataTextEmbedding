@@ -17,7 +17,7 @@ class JinaEmbeddingsV3(EmbeddingModel):
     key = "jina-v3"
     output_folder = "jina-embeddings-v3"
     model = "jina-embeddings-v3"
-    dimensions = 512
+    dimensions = 1024
     endpoint = "https://api.jina.ai/v1/embeddings"
 
     def __init__(self):
