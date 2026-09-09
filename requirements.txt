@@ -224,7 +224,7 @@ requests==2.33.1
     #   wikidatatextembedding
 rich==14.3.3
     # via typer
-safetensors==0.7.0
+safetensors==0.8.0
     # via transformers
 setuptools==81.0.0
     # via torch
@@ -240,7 +240,7 @@ stack-data==0.6.3
     # via ipython
 sympy==1.14.0
     # via torch
-tokenizers==0.22.2
+tokenizers==0.23.1
     # via transformers
 toml==0.10.2
     # via astrapy
@@ -256,7 +256,7 @@ traitlets==5.14.3
     # via
     #   ipython
     #   matplotlib-inline
-transformers==5.7.0
+transformers==5.16.1
     # via wikidatatextembedding
 triton==3.6.0 ; sys_platform == 'linux'
     # via torch

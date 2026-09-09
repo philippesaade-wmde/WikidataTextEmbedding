@@ -28,6 +28,13 @@ class GTEBase(EmbeddingModel):
             trust_remote_code=True,
             torch_dtype=torch.float32,
         )
+
+        self.model.embeddings._init_rope(self.model.config)
+        self.model.embeddings.register_buffer(
+            "position_ids",
+            torch.arange(self.model.config.max_position_embeddings),
+            persistent=False,
+        )
         self.model.to(self.device)
         self.model.eval()
 
