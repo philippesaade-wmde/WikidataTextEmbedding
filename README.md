@@ -230,7 +230,8 @@ docker compose \
   - `data/Wikidata/sqlite_wikidata_vectors_properties_<lang>.db`
 - Hugging Face dataset uploads:
   - cleaned Wikidata rows under `data/` (branch `HF_BRANCH`)
-  - vectors under `data/<lang>/` (branch `VECTOR_HF_BRANCH`)
+  - item and property vectors under `data/<lang>/`, and no-sitelink vectors under
+    `data/<lang>/items_nositelinks/` (branch `VECTOR_HF_BRANCH`)
 
 ## Notes
 

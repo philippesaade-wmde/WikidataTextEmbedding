@@ -223,13 +223,13 @@ def push_to_hf(items, label_factory=None):
     return pushed
 
 
-def save_vectors_to_hf():
+def save_vectors_to_hf(entity_types=VECTOR_ENTITY_TYPES):
     """Publish cached vector rows from SQLite to Hugging Face."""
     if HF_PUBLISHER is None:
         raise RuntimeError("HF publisher is not initialized in this process.")
 
     total = 0
-    for entity_type in VECTOR_ENTITY_TYPES:
+    for entity_type in entity_types:
         vector_cache = get_db_connection(
             lang=LANG,
             entity_type=entity_type,
@@ -761,23 +761,34 @@ def run_vectors_to_hf_stage():
         )
 
         stage_name = f"vectors_to_hf:{lang}"
-        HF_PUBLISHER = WikidataHFDatasetPublisher(
-            branch=VECTOR_HF_BRANCH,
-            token=VECTORS_HF_TOKEN,
-            repo_id=VECTORS_HF_REPO_ID,
-            storage_chunk_size=HF_CHUNK_SIZE,
-            memory_chunk_size=HF_BATCH_SIZE,
-            queue_size=HF_QUEUE_SIZE,
-            data_dir=f"{HF_DATA_DIR}/{LANG}",
+        regular_entity_types = tuple(
+            entity_type for entity_type in VECTOR_ENTITY_TYPES if entity_type != "items_nositelinks"
         )
+        upload_groups = []
+        if regular_entity_types:
+            upload_groups.append((regular_entity_types, f"{HF_DATA_DIR}/{LANG}"))
+        if "items_nositelinks" in VECTOR_ENTITY_TYPES:
+            upload_groups.append((("items_nositelinks",), f"{HF_DATA_DIR}/{LANG}/items_nositelinks"))
+
         vectors_pushed = 0
         try:
-            vectors_pushed = save_vectors_to_hf()
+            for entity_types, data_dir in upload_groups:
+                HF_PUBLISHER = WikidataHFDatasetPublisher(
+                    branch=VECTOR_HF_BRANCH,
+                    token=VECTORS_HF_TOKEN,
+                    repo_id=VECTORS_HF_REPO_ID,
+                    storage_chunk_size=HF_CHUNK_SIZE,
+                    memory_chunk_size=HF_BATCH_SIZE,
+                    queue_size=HF_QUEUE_SIZE,
+                    data_dir=data_dir,
+                )
+                try:
+                    vectors_pushed += save_vectors_to_hf(entity_types)
+                finally:
+                    HF_PUBLISHER.flush()
         except Exception as exc:
             STATS_TRACKER.record_error(stage_name, exc=exc)
             raise
-        finally:
-            HF_PUBLISHER.flush()
         vectors_to_hf_stats = {
             "branch": VECTOR_HF_BRANCH,
             "data_dir": f"{HF_DATA_DIR}/{LANG}",
