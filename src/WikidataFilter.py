@@ -192,16 +192,6 @@ class WikidataItemFilter:
 
         return has_lang or has_fallback_lang or has_mul_lang
 
-    def not_disambiguation(self, item, disambiguation_qid="Q4167410"):
-        """Return whether an item is not marked as a disambiguation page."""
-        instanceof = item.get("claims", {}).get("P31", [])
-        instanceof = [
-            c.get("mainsnak", {}).get("datavalue", {}).get("value", {}).get("id")
-            for c in instanceof
-            if c.get("rank") != "deprecated"
-        ]
-        return disambiguation_qid not in instanceof
-
     def has_content(self, item):
         """Return whether an item has a description or at least one claim."""
         return self.has_description(item) or len(item.get("claims", {})) > 0
@@ -214,7 +204,6 @@ class WikidataItemFilter:
         return (
             self.has_label(item)
             and self.has_content(item)
-            and self.not_disambiguation(item)
         )
 
 
