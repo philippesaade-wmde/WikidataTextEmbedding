@@ -315,8 +315,11 @@ class WikidataDumpReader:
     def download(self, show_progress=True, chunk_size=1024 * 1024):
         """Download the latest Wikidata entity dump."""
         url = f"https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.{self.extension}"
+        headers = {
+            "User-Agent": "Wikidata Vector Database Updater (embedding@wikimedia.de)"
+        }
 
-        with requests.get(url, stream=True, timeout=60) as response:
+        with requests.get(url, headers=headers, stream=True) as response:
             response.raise_for_status()
             total_size = int(response.headers.get("content-length", 0))
 
